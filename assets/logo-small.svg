@@ -1,0 +1,15 @@
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PurgeX">
+  <title>PurgeX</title>
+
+  <!--
+    Версия для мелких размеров (16-24 пикселя): панель задач, системный лоток, вкладка браузера.
+    Осколки убраны намеренно — на таком размере они превращаются в грязь и только
+    ухудшают читаемость. Остаётся то, что различимо: целая диагональ и оборванная красная.
+    Скругление меньше, поле плотнее.
+  -->
+
+  <rect width="16" height="16" rx="3" fill="#16171B"/>
+  <path d="M4 4 L12 12" stroke="#F2F3F5" stroke-width="2.4" stroke-linecap="square"/>
+  <path d="M12 4 L8.6 7.4" stroke="#E63329" stroke-width="2.4" stroke-linecap="square"/>
+  <rect x="4.6" y="10" width="2.6" height="2.6" fill="#E63329"/>
+</svg>
