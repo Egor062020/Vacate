@@ -1,0 +1,38 @@
+# Результаты сборки
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]uild/
+[Aa]rtifacts/
+publish/
+
+# Пользовательские файлы окружения
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+.idea/
+
+# Результаты тестов и покрытие
+[Tt]est[Rr]esult*/
+coverage*.json
+coverage*.xml
+*.coverage
+*.trx
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+.nuget/
+
+# Прочее
+*.log
+*.tmp
+Thumbs.db
+desktop.ini

@@ -1,0 +1,22 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Только x64: из 32-разрядного процесса системные проверки целостности уходят
+         в каталог перенаправления и падают. Решение зафиксировано в описании проекта, §3. -->
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Предупреждение в проекте, который удаляет файлы под повышенными правами,
+         это будущая ошибка. Собираем строго. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <NeutralLanguage>ru</NeutralLanguage>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

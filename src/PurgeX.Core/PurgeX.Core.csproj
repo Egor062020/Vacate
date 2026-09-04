@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Ядро: движок выполнения планов, охрана, карантин, журнал, откат.
+    Не обращается к системе напрямую — все изменения идут через приёмник действий,
+    который реализует платформенный слой.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>PurgeX.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PurgeX.Abstractions\PurgeX.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
