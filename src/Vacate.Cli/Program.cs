@@ -21,6 +21,7 @@ try
         "apps" => Commands.Apps(showRuntimes: args.Contains("--all")),
         "leftovers" => Commands.Leftovers(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
         "startup" => Commands.Startup(showAll: args.Contains("--all")),
+        "extensions" => Commands.Extensions(),
         "clean" => await Commands.CleanAsync(dryRun: args.Contains("--dry-run")),
         "history" => await Commands.HistoryAsync(),
         "undo" => await Commands.UndoAsync(args.Skip(1).FirstOrDefault()),
@@ -50,6 +51,7 @@ namespace Vacate.Cli
                   vacate apps              установленные программы (--all: со средами выполнения)
                   vacate leftovers <имя>   найти следы программы, ничего не удаляя
                   vacate startup           что стартует вместе с Windows (--all: и службы)
+                  vacate extensions        расширения браузеров и их права
                   vacate clean --dry-run   полный прогон без единого изменения на диске
                   vacate clean             выполнить очистку
                   vacate history           последние сеансы
@@ -118,6 +120,61 @@ namespace Vacate.Cli
 
             Console.WriteLine();
             Console.WriteLine("Размер указан по заявлению самой программы и часто занижен.");
+
+            return 0;
+        }
+
+        public static int Extensions()
+        {
+            var extensions = new BrowserExtensionScanner().Scan();
+
+            if (extensions.Count == 0)
+            {
+                Console.WriteLine("Расширений не найдено.");
+                return 0;
+            }
+
+            Console.WriteLine($"Расширений установлено: {extensions.Count}");
+            Console.WriteLine();
+
+            // Сначала те, кто просит больше всего прав: именно их стоит пересмотреть.
+            foreach (var extension in extensions)
+            {
+                var size = extension.SizeBytes > 0 ? Format(extension.SizeBytes) : string.Empty;
+                var marker = extension.ReadsAllSites ? " ← читает все сайты" : string.Empty;
+
+                Console.WriteLine($"  {Trim(extension.Name, 40),-40} {extension.Browser,-16} {size,10}{marker}");
+
+                if (extension.ProfileName != "Default")
+                {
+                    Console.WriteLine($"      профиль: {extension.ProfileName}");
+                }
+
+                // Показываем только то, что действительно стоит внимания:
+                // «хранит свои настройки» никому не интересно.
+                var notable = extension.Permissions
+                    .Where(p => p.Level >= PermissionLevel.SomeSites)
+                    .DistinctBy(p => p.Description)
+                    .Take(4);
+
+                foreach (var permission in notable)
+                {
+                    Console.WriteLine($"      · {permission.Description}");
+                }
+            }
+
+            Console.WriteLine();
+
+            var dangerous = extensions.Count(e => e.ReadsAllSites);
+
+            if (dangerous > 0)
+            {
+                Console.WriteLine($"Расширений с доступом ко всем сайтам: {dangerous}.");
+                Console.WriteLine("Такое расширение видит всё, что вы открываете, включая банк и почту.");
+            }
+
+            Console.WriteLine("Отключение и удаление делаются в самом браузере: правку его настроек");
+            Console.WriteLine("извне браузер отменяет при следующем запуске.");
 
             return 0;
         }
