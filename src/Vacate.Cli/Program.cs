@@ -20,6 +20,7 @@ try
         "scan" => await Commands.ScanAsync(),
         "apps" => Commands.Apps(showRuntimes: args.Contains("--all")),
         "leftovers" => Commands.Leftovers(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
+        "startup" => Commands.Startup(showAll: args.Contains("--all")),
         "clean" => await Commands.CleanAsync(dryRun: args.Contains("--dry-run")),
         "history" => await Commands.HistoryAsync(),
         "undo" => await Commands.UndoAsync(args.Skip(1).FirstOrDefault()),
@@ -48,6 +49,7 @@ namespace Vacate.Cli
                   vacate scan              показать, что найдено, ничего не меняя
                   vacate apps              установленные программы (--all: со средами выполнения)
                   vacate leftovers <имя>   найти следы программы, ничего не удаляя
+                  vacate startup           что стартует вместе с Windows (--all: и службы)
                   vacate clean --dry-run   полный прогон без единого изменения на диске
                   vacate clean             выполнить очистку
                   vacate history           последние сеансы
@@ -119,6 +121,61 @@ namespace Vacate.Cli
 
             return 0;
         }
+
+        public static int Startup(bool showAll)
+        {
+            var entries = new StartupScanner().Scan();
+
+            // Служб на обычной машине под сотню, и почти все системные.
+            // Вываливать их сразу — значит утопить в них то, что человеку
+            // действительно стоит посмотреть: программы, которые он ставил сам.
+            var visible = showAll
+                ? entries
+                : entries.Where(e => e.Source != StartupSource.Service).ToList();
+
+            var services = entries.Where(e => e.Source == StartupSource.Service).ToList();
+
+            Console.WriteLine($"Записей автозапуска: {visible.Count}");
+            Console.WriteLine();
+
+            foreach (var group in visible.GroupBy(e => e.Source))
+            {
+                Console.WriteLine($"{DescribeSource(group.Key)}:");
+
+                foreach (var entry in group)
+                {
+                    var state = entry.IsEnabled ? "вкл " : "выкл";
+                    var scope = entry.Scope == InstallScope.User ? "вы" : "все";
+                    var locked = entry.Control == StartupControl.ViewOnly ? "  [только просмотр]" : string.Empty;
+
+                    Console.WriteLine($"  [{state}] {Trim(entry.Name, 38),-38} {scope,-4} {Trim(entry.ImagePath, 46)}{locked}");
+
+                    if (entry.Note is not null)
+                    {
+                        Console.WriteLine($"         {entry.Note}");
+                    }
+                }
+
+                Console.WriteLine();
+            }
+
+            if (!showAll && services.Count > 0)
+            {
+                var locked = services.Count(s => s.Control == StartupControl.ViewOnly);
+                Console.WriteLine($"Служб в автозапуске: {services.Count}, из них защищённых от отключения: {locked}.");
+                Console.WriteLine("Показать: vacate startup --all");
+            }
+
+            return 0;
+        }
+
+        private static string DescribeSource(StartupSource source) => source switch
+        {
+            StartupSource.RunKey => "Реестр, ключ автозапуска",
+            StartupSource.StartupFolder => "Папка автозагрузки",
+            StartupSource.ScheduledTask => "Задачи планировщика",
+            _ => "Службы Windows",
+        };
 
         public static int Leftovers(string? query)
         {
