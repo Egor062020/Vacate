@@ -1,0 +1,328 @@
+using System.Text;
+using PurgeX.Abstractions.Execution;
+using PurgeX.Abstractions.Model;
+using PurgeX.Abstractions.Safety;
+using PurgeX.Cli;
+using PurgeX.Core.Execution;
+using PurgeX.Core.Journal;
+using PurgeX.Core.Safety;
+using PurgeX.Platform.Windows.Files;
+
+Console.OutputEncoding = Encoding.UTF8;
+
+var command = args.Length > 0 ? args[0].ToLowerInvariant() : "help";
+
+try
+{
+    return command switch
+    {
+        "scan" => await Commands.ScanAsync(),
+        "clean" => await Commands.CleanAsync(dryRun: args.Contains("--dry-run")),
+        "history" => await Commands.HistoryAsync(),
+        "undo" => await Commands.UndoAsync(args.Skip(1).FirstOrDefault()),
+        _ => Commands.Help(),
+    };
+}
+catch (OperationCanceledException)
+{
+    Console.WriteLine("Прервано.");
+    return 130;
+}
+
+namespace PurgeX.Cli
+{
+    /// <summary>Команды консольной оболочки.</summary>
+    internal static class Commands
+    {
+        private static string DataDirectory =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PurgeX");
+
+        public static int Help()
+        {
+            Console.WriteLine("""
+                PurgeX — очистка и обслуживание Windows.
+
+                  purgex scan              показать, что найдено, ничего не меняя
+                  purgex clean --dry-run   полный прогон без единого изменения на диске
+                  purgex clean             выполнить очистку
+                  purgex history           последние сеансы
+                  purgex undo <сеанс>      вернуть то, что можно вернуть
+
+                Временные файлы моложе суток не трогаются: их может использовать
+                работающая программа.
+                """);
+
+            return 0;
+        }
+
+        public static async Task<int> ScanAsync()
+        {
+            var (scanner, _) = BuildScanner();
+            var plan = scanner.Scan(TempLocation.Standard(), CancellationToken.None);
+
+            if (plan.TotalCount == 0)
+            {
+                Console.WriteLine("Чисто. Мусор накапливается примерно за неделю, загляните позже.");
+                return 0;
+            }
+
+            Console.WriteLine($"Найдено: {plan.TotalCount} объектов, {Format(plan.TotalSizeOnDiskBytes)}");
+            Console.WriteLine();
+
+            foreach (var group in plan.Groups)
+            {
+                Console.WriteLine($"  {Describe(group.Title),-32} {group.Operations.Count,8} шт.  {Format(group.SizeOnDiskBytes),12}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Это оценка сверху: часть файлов может быть занята работающими программами.");
+            return 0;
+        }
+
+        public static async Task<int> CleanAsync(bool dryRun)
+        {
+            var (scanner, policy) = BuildScanner();
+            var plan = scanner.Scan(TempLocation.Standard(), CancellationToken.None);
+
+            if (plan.TotalCount == 0)
+            {
+                Console.WriteLine("Чисто, делать нечего.");
+                return 0;
+            }
+
+            Console.WriteLine(dryRun
+                ? $"Пробный прогон: {plan.TotalCount} объектов, {Format(plan.TotalSizeOnDiskBytes)}. Ничего не изменится."
+                : $"Очистка: {plan.TotalCount} объектов, {Format(plan.TotalSizeOnDiskBytes)}.");
+            Console.WriteLine();
+
+            var quarantine = new FileSystemQuarantine();
+            var journal = new JsonlOperationJournal(Path.Combine(DataDirectory, "journal"));
+            var volumes = new VolumeInfoProvider();
+
+            // Весь механизм предпросмотра — в выборе приёмника действий.
+            // Ни исполнитель, ни охрана не знают, в каком режиме работают.
+            IEffectSink sink = dryRun ? new RecordingEffectSink() : new RealEffectSink(quarantine);
+
+            var executor = new PlanExecutor(
+                sink,
+                journal,
+                volumes,
+                new CurrentUserEnvironmentProvider(volumes),
+                [new EmergencyModeGuard(), new ProtectedPathGuard(policy), new RecycleBinOrderGuard(), new VolumeLimitGuard()],
+                [new ReparseAndCloudGuard()],
+                dryRun);
+
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+            var progress = new Progress<ExecutionProgress>(p =>
+                Console.Write($"\r  {p.ProcessedCount}/{p.TotalCount}   {Format(p.FreedSoFarBytes)}   "));
+
+            var report = await executor.ExecuteAsync(plan, progress, cts.Token);
+
+            Console.WriteLine();
+            Console.WriteLine();
+            PrintReport(report);
+
+            return report.Cancelled ? 130 : 0;
+        }
+
+        public static async Task<int> HistoryAsync()
+        {
+            var journal = new JsonlOperationJournal(Path.Combine(DataDirectory, "journal"));
+            var sessions = await journal.GetRecentSessionsAsync(10, CancellationToken.None);
+
+            if (sessions.Count == 0)
+            {
+                Console.WriteLine("Сеансов пока не было.");
+                return 0;
+            }
+
+            foreach (var session in sessions)
+            {
+                var restorable = session.HasRestorableItems ? "  можно откатить" : string.Empty;
+                Console.WriteLine($"{session.SessionId}  {session.StartedAtUtc.ToLocalTime():dd.MM.yyyy HH:mm}  " +
+                                  $"освобождено {Format(session.ActuallyFreedBytes),12}  объектов {session.ItemCount,7}{restorable}");
+            }
+
+            return 0;
+        }
+
+        public static async Task<int> UndoAsync(string? sessionId)
+        {
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                Console.WriteLine("Укажите сеанс: purgex undo <идентификатор>. Список — purgex history.");
+                return 2;
+            }
+
+            var journal = new JsonlOperationJournal(Path.Combine(DataDirectory, "journal"));
+            var quarantine = new FileSystemQuarantine();
+
+            var undoable = await journal.GetUndoableAsync(sessionId, CancellationToken.None);
+
+            if (undoable.Count == 0)
+            {
+                Console.WriteLine("Возвращать нечего: в этом сеансе не было обратимых операций.");
+                return 0;
+            }
+
+            var restored = 0;
+            var failed = 0;
+
+            foreach (var entry in undoable)
+            {
+                var result = await quarantine.RestoreAsync(entry.UndoToken, CancellationToken.None);
+
+                if (result.Success)
+                {
+                    await journal.MarkRestoredAsync(sessionId, entry.UndoToken, CancellationToken.None);
+                    restored++;
+                }
+                else
+                {
+                    failed++;
+                    Console.WriteLine($"  не вернулось: {entry.OriginalPath}");
+                }
+            }
+
+            Console.WriteLine($"Возвращено: {restored}. Не удалось: {failed}.");
+            return failed == 0 ? 0 : 1;
+        }
+
+        private static (TempFilesScanner Scanner, PathPolicy Policy) BuildScanner()
+        {
+            var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            var systemDrive = Path.GetPathRoot(windows) ?? @"C:\";
+
+            var ownDirectories = new List<string> { AppContext.BaseDirectory };
+            ownDirectories.AddRange(FileSystemQuarantine.EnumerateStores());
+
+            var policy = PathPolicy.CreateDefault(windows, systemDrive, ownDirectories);
+
+            return (new TempFilesScanner(policy, new QuarantinePathCheck()), policy);
+        }
+
+        private static void PrintReport(ExecutionReport report)
+        {
+            if (report.WasDryRun)
+            {
+                Console.WriteLine($"Было бы обработано: {report.Succeeded} объектов, {Format(report.ClaimedBytes)}.");
+                Console.WriteLine("На диске ничего не изменилось.");
+            }
+            else
+            {
+                // Две цифры рядом — суть честного счётчика.
+                Console.WriteLine($"Удалено:             {report.Succeeded} объектов, {Format(report.ClaimedBytes)}");
+                Console.WriteLine($"Реально освободилось: {Format(report.ActuallyFreedBytes)}");
+            }
+
+            if (report.Skipped > 0)
+            {
+                Console.WriteLine($"Пропущено: {report.Skipped}");
+            }
+
+            if (report.Failed > 0)
+            {
+                Console.WriteLine($"Не удалось: {report.Failed}");
+            }
+
+            if (report.Denied > 0)
+            {
+                Console.WriteLine($"Отклонено охраной: {report.Denied}");
+            }
+
+            if (report.Discrepancies.Count > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine("Куда делась разница:");
+
+                foreach (var reason in report.Discrepancies)
+                {
+                    Console.WriteLine($"  {Explain(reason.Kind),-46} {Format(reason.Bytes),12}" +
+                                      (reason.Detail is null ? string.Empty : $"  ({reason.Detail})"));
+                }
+            }
+
+            if (report.Cancelled)
+            {
+                Console.WriteLine();
+                Console.WriteLine("Прервано. Всё, что успели сделать, записано в журнал.");
+            }
+        }
+
+        private static string Explain(DiscrepancyKind kind) => kind switch
+        {
+            DiscrepancyKind.HeldByProcess => "занято работающей программой, вернётся при закрытии",
+            DiscrepancyKind.NotDeleted => "не удалось удалить",
+            DiscrepancyKind.HardLinked => "файл числится дважды, а занимает место один раз",
+            DiscrepancyKind.CompressedOrSparse => "сжатые файлы: на диске занимали меньше",
+            DiscrepancyKind.InQuarantine => "в карантине, освободится после истечения срока",
+            DiscrepancyKind.InRecycleBin => "в Корзине, освободится после её очистки",
+            _ => kind.ToString(),
+        };
+
+        private static string Describe(LocalizedText text) => text.ResourceKey switch
+        {
+            "Clean.Temp.User" => "Временные файлы пользователя",
+            "Clean.Temp.System" => "Временные файлы системы",
+            _ => text.ResourceKey ?? "—",
+        };
+
+        /// <summary>
+        /// Единицы двоичные, как в проводнике Windows.
+        /// </summary>
+        /// <remarks>
+        /// Десятичные разошлись бы с проводником на семь процентов, и честный счётчик
+        /// первым обвинили бы во лжи.
+        /// </remarks>
+        private static string Format(long bytes)
+        {
+            string[] units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+            double value = bytes;
+            var unit = 0;
+
+            while (value >= 1024 && unit < units.Length - 1)
+            {
+                value /= 1024;
+                unit++;
+            }
+
+            return unit == 0 ? $"{bytes} {units[0]}" : $"{value:0.##} {units[unit]}";
+        }
+
+        private sealed class QuarantinePathCheck : IQuarantinePathCheck
+        {
+            public bool IsQuarantinePath(string path)
+                => path.Contains(FileSystemQuarantine.DirectoryName, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Окружение охраны для консольного режима.
+    /// </summary>
+    /// <remarks>
+    /// Пока берёт текущего пользователя процесса. Это верно, только когда программа
+    /// запущена без повышения прав — то есть в том режиме, к которому продукт и переходит
+    /// согласно описанию проекта. Определение целевого пользователя при запуске с чужими
+    /// правами — задача отдельного этапа.
+    /// </remarks>
+    internal sealed class CurrentUserEnvironmentProvider(IVolumeInfoProvider volumes) : IGuardEnvironmentProvider
+    {
+        public GuardEnvironment Create()
+        {
+            var free = volumes.GetFreeSpaceByVolume();
+            var systemRoot = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.Windows)) ?? @"C:\";
+
+            var emergency = free.TryGetValue(systemRoot, out var available)
+                            && available < volumes.EmergencyThresholdBytes;
+
+            return new GuardEnvironment(
+                TargetUserSid: Environment.UserName,
+                TargetUserProfilePath: Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                FreeSpaceByVolume: free,
+                IsEmergencyMode: emergency,
+                AdvancedMode: false);
+        }
+    }
+}
