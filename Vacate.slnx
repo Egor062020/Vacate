@@ -1,6 +1,9 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Vacate.Abstractions/Vacate.Abstractions.csproj" />
+    <Project Path="src/Vacate.App/Vacate.App.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/Vacate.Cli/Vacate.Cli.csproj">
       <Platform Project="x64" />
     </Project>

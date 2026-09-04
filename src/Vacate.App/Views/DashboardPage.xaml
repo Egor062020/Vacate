@@ -1,0 +1,71 @@
+<UserControl x:Class="Vacate.App.Views.DashboardPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Style="{StaticResource PageTitle}" Text="Обзор" />
+            <TextBlock Style="{StaticResource PageSubtitle}"
+                       Text="Состояние компьютера и что можно сделать прямо сейчас." />
+
+            <!-- Метрики: крупные числа, как в референсе оформления -->
+            <UniformGrid Rows="1" Columns="3" Margin="0,0,0,8">
+                <Border Style="{StaticResource Card}" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock x:Name="FreeSpaceValue" Style="{StaticResource MetricValue}" Text="—" />
+                        <TextBlock Style="{StaticResource MetricLabel}" Text="СВОБОДНО НА СИСТЕМНОМ ДИСКЕ" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="5,0">
+                    <StackPanel>
+                        <TextBlock x:Name="JunkValue" Style="{StaticResource MetricValue}" Text="—" />
+                        <TextBlock Style="{StaticResource MetricLabel}" Text="МОЖНО ОСВОБОДИТЬ" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="10,0,0,0">
+                    <StackPanel>
+                        <TextBlock x:Name="StartupValue" Style="{StaticResource MetricValue}" Text="—" />
+                        <TextBlock Style="{StaticResource MetricLabel}" Text="ПРОГРАММ В АВТОЗАПУСКЕ" />
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <!-- Предупреждения о состоянии, если они есть -->
+            <ItemsControl x:Name="WarningsList" Margin="0,14,0,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,8" BorderBrush="{StaticResource WarningBrush}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource BodyText}" FontWeight="SemiBold" Text="{Binding Title}" />
+                                <TextBlock Style="{StaticResource SecondaryText}" Margin="0,4,0,0" Text="{Binding Detail}" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Style="{StaticResource SectionTitle}" Text="С чего начать" />
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource BodyText}"
+                               Text="Быстрая очистка убирает только то, что создаётся заново: временные файлы и кэши. Реестр и программы она не трогает." />
+                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                        <Button x:Name="ScanButton" Style="{StaticResource PrimaryButton}" Content="Посмотреть, что найдётся" Click="OnScan" />
+                        <TextBlock x:Name="ScanHint" Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="14,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Последняя очистка" />
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel x:Name="LastSessionPanel">
+                    <TextBlock x:Name="LastSessionText" Style="{StaticResource SecondaryText}" Text="Очисток пока не было." />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

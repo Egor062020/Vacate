@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Графическая оболочка. Вся работа выполняется теми же модулями, что и в консольной
+    версии: интерфейс ничего не делает сам, он только показывает и запрашивает.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Vacate.App</RootNamespace>
+    <AssemblyName>Vacate</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon></ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vacate.Abstractions\Vacate.Abstractions.csproj" />
+    <ProjectReference Include="..\Vacate.Core\Vacate.Core.csproj" />
+    <ProjectReference Include="..\Vacate.Platform.Windows\Vacate.Platform.Windows.csproj" />
+  </ItemGroup>
+
+</Project>

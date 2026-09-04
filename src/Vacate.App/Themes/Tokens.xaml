@@ -1,0 +1,54 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Оформление продукта. Значения заданы в одном месте намеренно: разъехавшиеся
+        по разметке цвета и отступы — первый признак интерфейса, собранного наспех.
+
+        Палитра из описания проекта: плотный тёмный интерфейс, красный акцент,
+        зелёный для благополучного состояния, жёлтый для предупреждений.
+    -->
+
+    <!-- Поверхности -->
+    <Color x:Key="SurfaceColor">#16171B</Color>
+    <Color x:Key="SidebarColor">#0F1014</Color>
+    <Color x:Key="CardColor">#232529</Color>
+    <Color x:Key="CardHoverColor">#2B2E33</Color>
+    <Color x:Key="BorderColor">#2E3137</Color>
+
+    <!-- Смысловые цвета -->
+    <Color x:Key="AccentColor">#E63329</Color>
+    <Color x:Key="AccentDimColor">#8E211B</Color>
+    <Color x:Key="SuccessColor">#22C55E</Color>
+    <Color x:Key="WarningColor">#EAB308</Color>
+
+    <!-- Текст -->
+    <Color x:Key="TextPrimaryColor">#F2F3F5</Color>
+    <Color x:Key="TextSecondaryColor">#8B8D93</Color>
+    <Color x:Key="TextDisabledColor">#5A5D63</Color>
+
+    <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
+    <SolidColorBrush x:Key="SidebarBrush" Color="{StaticResource SidebarColor}" />
+    <SolidColorBrush x:Key="CardBrush" Color="{StaticResource CardColor}" />
+    <SolidColorBrush x:Key="CardHoverBrush" Color="{StaticResource CardHoverColor}" />
+    <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}" />
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentDimBrush" Color="{StaticResource AccentDimColor}" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}" />
+    <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimaryColor}" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondaryColor}" />
+    <SolidColorBrush x:Key="TextDisabledBrush" Color="{StaticResource TextDisabledColor}" />
+
+    <!--
+        Числа и пути показываются моноширинным: колонки цифр выравниваются сами,
+        а технические строки читаются как технические.
+    -->
+    <FontFamily x:Key="UiFont">Segoe UI</FontFamily>
+    <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
+
+    <system:Double x:Key="RadiusSmall" xmlns:system="clr-namespace:System;assembly=System.Runtime">6</system:Double>
+    <CornerRadius x:Key="CardRadius">10</CornerRadius>
+    <CornerRadius x:Key="ButtonRadius">6</CornerRadius>
+
+</ResourceDictionary>
