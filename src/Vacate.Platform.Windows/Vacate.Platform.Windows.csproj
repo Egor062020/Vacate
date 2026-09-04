@@ -16,4 +16,12 @@
     <ProjectReference Include="..\Vacate.Core\Vacate.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      Разбор команд удаления и построение слов для поиска остатков — внутренние детали,
+      но именно они ломаются на реальных данных чаще всего, поэтому покрыты тестами напрямую.
+    -->
+    <InternalsVisibleTo Include="Vacate.Tests" />
+  </ItemGroup>
+
 </Project>

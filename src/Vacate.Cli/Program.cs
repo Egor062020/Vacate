@@ -19,6 +19,7 @@ try
     {
         "scan" => await Commands.ScanAsync(),
         "apps" => Commands.Apps(showRuntimes: args.Contains("--all")),
+        "leftovers" => Commands.Leftovers(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
         "clean" => await Commands.CleanAsync(dryRun: args.Contains("--dry-run")),
         "history" => await Commands.HistoryAsync(),
         "undo" => await Commands.UndoAsync(args.Skip(1).FirstOrDefault()),
@@ -46,6 +47,7 @@ namespace Vacate.Cli
 
                   vacate scan              показать, что найдено, ничего не меняя
                   vacate apps              установленные программы (--all: со средами выполнения)
+                  vacate leftovers <имя>   найти следы программы, ничего не удаляя
                   vacate clean --dry-run   полный прогон без единого изменения на диске
                   vacate clean             выполнить очистку
                   vacate history           последние сеансы
@@ -117,6 +119,71 @@ namespace Vacate.Cli
 
             return 0;
         }
+
+        public static int Leftovers(string? query)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                Console.WriteLine("Укажите программу: vacate leftovers <часть названия>. Список — vacate apps.");
+                return 2;
+            }
+
+            var apps = new InstalledAppsScanner().Scan();
+            var matches = apps
+                .Where(a => a.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (matches.Count == 0)
+            {
+                Console.WriteLine($"Программа с названием «{query}» не найдена.");
+                return 1;
+            }
+
+            if (matches.Count > 1)
+            {
+                Console.WriteLine("Подходит несколько программ, уточните запрос:");
+                matches.ForEach(a => Console.WriteLine($"  {a.DisplayName}"));
+                return 2;
+            }
+
+            var app = matches[0];
+            Console.WriteLine($"Следы программы «{app.DisplayName}»");
+            Console.WriteLine();
+
+            var found = new LeftoverScanner().Scan(app);
+
+            if (found.Count == 0)
+            {
+                Console.WriteLine("Ничего не найдено — программа не оставила заметных следов.");
+                return 0;
+            }
+
+            // Порядок важен: сначала то, в чём мы уверены, в конце — спорное,
+            // которое по умолчанию не отмечается к удалению.
+            foreach (var group in found.GroupBy(f => f.Confidence).OrderBy(g => g.Key))
+            {
+                Console.WriteLine($"{DescribeConfidence(group.Key)}:");
+
+                foreach (var item in group.OrderByDescending(i => i.SizeOnDiskBytes))
+                {
+                    var size = item.SizeOnDiskBytes > 0 ? Format(item.SizeOnDiskBytes) : string.Empty;
+                    Console.WriteLine($"  {item.Path,-64} {size,10}");
+                    Console.WriteLine($"      почему: {string.Join("; ", item.Evidence)}");
+                }
+
+                Console.WriteLine();
+            }
+
+            Console.WriteLine("Ничего не удалено: это только показ. Удаление появится вместе с интерфейсом.");
+            return 0;
+        }
+
+        private static string DescribeConfidence(LeftoverConfidence confidence) => confidence switch
+        {
+            LeftoverConfidence.Certain => "Точно относится к программе",
+            LeftoverConfidence.Likely => "Скорее всего относится к программе",
+            _ => "Возможно, относится — проверьте сами (по умолчанию не отмечается)",
+        };
 
         private static string Trim(string? value, int length)
         {
