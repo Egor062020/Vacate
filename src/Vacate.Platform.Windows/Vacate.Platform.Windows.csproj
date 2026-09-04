@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Платформенный слой: единственное место, где продукт обращается к файловой системе,
+    реестру и системным вызовам Windows. Всё остальное работает через контракты.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Vacate.Platform.Windows</RootNamespace>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vacate.Abstractions\Vacate.Abstractions.csproj" />
+    <ProjectReference Include="..\Vacate.Core\Vacate.Core.csproj" />
+  </ItemGroup>
+
+</Project>

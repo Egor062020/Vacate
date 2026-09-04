@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Vacate.Abstractions/Vacate.Abstractions.csproj" />
+    <Project Path="src/Vacate.Cli/Vacate.Cli.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Vacate.Core/Vacate.Core.csproj" />
+    <Project Path="src/Vacate.Platform.Windows/Vacate.Platform.Windows.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Vacate.Tests/Vacate.Tests.csproj" />
+  </Folder>
+</Solution>
