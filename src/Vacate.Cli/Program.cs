@@ -24,6 +24,8 @@ try
         "extensions" => Commands.Extensions(),
         "disk" => Commands.Disk(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
         "health" => Commands.Health(),
+        "schedule" => Commands.Schedule(args.Skip(1).ToArray()),
+        "--quiet-clean" => await Commands.QuietCleanAsync(),
         "clean" => await Commands.CleanAsync(dryRun: args.Contains("--dry-run")),
         "history" => await Commands.HistoryAsync(),
         "undo" => await Commands.UndoAsync(args.Skip(1).FirstOrDefault()),
@@ -56,6 +58,7 @@ namespace Vacate.Cli
                   vacate extensions        расширения браузеров и их права
                   vacate disk <папка>      куда делось место: крупные файлы, дубли, виды
                   vacate health            состояние дисков
+                  vacate schedule          автоматическая очистка: status | on | off
                   vacate clean --dry-run   полный прогон без единого изменения на диске
                   vacate clean             выполнить очистку
                   vacate history           последние сеансы
@@ -126,6 +129,105 @@ namespace Vacate.Cli
             Console.WriteLine("Размер указан по заявлению самой программы и часто занижен.");
 
             return 0;
+        }
+
+        public static int Schedule(string[] arguments)
+        {
+            var manager = new ScheduleManager();
+            var action = arguments.FirstOrDefault()?.ToLowerInvariant() ?? "status";
+
+            switch (action)
+            {
+                case "on":
+                {
+                    var executable = Environment.ProcessPath;
+
+                    if (executable is null)
+                    {
+                        Console.WriteLine("Не удалось определить путь к программе.");
+                        return 1;
+                    }
+
+                    var result = manager.Enable(executable, ScheduleFrequency.Weekly, atLogon: false);
+                    Console.WriteLine(result.Message);
+
+                    if (result.Success)
+                    {
+                        Console.WriteLine("Автоматически выполняются только безопасные категории:");
+                        Console.WriteLine("временные файлы и кэши. Реестр и программы не затрагиваются никогда.");
+                    }
+
+                    return result.Success ? 0 : 1;
+                }
+
+                case "off":
+                {
+                    var result = manager.Disable();
+                    Console.WriteLine(result.Message);
+                    return result.Success ? 0 : 1;
+                }
+
+                default:
+                {
+                    var state = manager.GetState();
+
+                    if (!state.Enabled)
+                    {
+                        Console.WriteLine("Автоматическая очистка выключена.");
+                        Console.WriteLine("Включить: vacate schedule on");
+                        return 0;
+                    }
+
+                    Console.WriteLine($"Автоматическая очистка включена, {state.Frequency}.");
+
+                    if (state.NextRun is { } next)
+                    {
+                        Console.WriteLine($"Следующий запуск: {next:dd.MM.yyyy HH:mm}");
+                    }
+
+                    return 0;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Тихий режим для запуска по расписанию.
+        /// </summary>
+        /// <remarks>
+        /// Выполняет только безопасные категории и ничего не спрашивает. Итог пишется
+        /// в журнал, а не только в уведомление: уведомления скрываются режимом «не беспокоить»,
+        /// и тогда результат ночной работы пропал бы бесследно.
+        /// </remarks>
+        public static async Task<int> QuietCleanAsync()
+        {
+            var (scanner, policy) = BuildScanner();
+            var plan = scanner.Scan(TempLocation.Standard(), CancellationToken.None);
+
+            if (plan.TotalCount == 0)
+            {
+                return 0;
+            }
+
+            var quarantine = new FileSystemQuarantine();
+            var journal = new JsonlOperationJournal(Path.Combine(DataDirectory, "journal"));
+            var volumes = new VolumeInfoProvider();
+
+            var executor = new PlanExecutor(
+                new RealEffectSink(quarantine),
+                journal,
+                volumes,
+                new CurrentUserEnvironmentProvider(volumes),
+                [new EmergencyModeGuard(), new ProtectedPathGuard(policy), new RecycleBinOrderGuard(), new VolumeLimitGuard()],
+                [new ReparseAndCloudGuard()],
+                isDryRun: false);
+
+            var report = await executor.ExecuteAsync(plan, null, CancellationToken.None);
+
+            // Заодно убираем истёкший карантин: программа не висит в памяти,
+            // и другого повода это сделать не будет.
+            await quarantine.PurgeExpiredAsync(CancellationToken.None);
+
+            return report.Failed > 0 ? 1 : 0;
         }
 
         public static int Health()
