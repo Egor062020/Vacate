@@ -7,6 +7,7 @@ using PurgeX.Core.Execution;
 using PurgeX.Core.Journal;
 using PurgeX.Core.Safety;
 using PurgeX.Platform.Windows.Files;
+using PurgeX.Platform.Windows.Registry;
 
 Console.OutputEncoding = Encoding.UTF8;
 
@@ -17,6 +18,7 @@ try
     return command switch
     {
         "scan" => await Commands.ScanAsync(),
+        "apps" => Commands.Apps(showRuntimes: args.Contains("--all")),
         "clean" => await Commands.CleanAsync(dryRun: args.Contains("--dry-run")),
         "history" => await Commands.HistoryAsync(),
         "undo" => await Commands.UndoAsync(args.Skip(1).FirstOrDefault()),
@@ -43,6 +45,7 @@ namespace PurgeX.Cli
                 PurgeX — очистка и обслуживание Windows.
 
                   purgex scan              показать, что найдено, ничего не меняя
+                  purgex apps              установленные программы (--all: со средами выполнения)
                   purgex clean --dry-run   полный прогон без единого изменения на диске
                   purgex clean             выполнить очистку
                   purgex history           последние сеансы
@@ -77,6 +80,52 @@ namespace PurgeX.Cli
             Console.WriteLine();
             Console.WriteLine("Это оценка сверху: часть файлов может быть занята работающими программами.");
             return 0;
+        }
+
+        public static int Apps(bool showRuntimes)
+        {
+            var apps = new InstalledAppsScanner().Scan();
+
+            // Среды выполнения занимают заметную часть списка и удалять их вслепую нельзя:
+            // от них зависят другие программы. По умолчанию они не показываются,
+            // но и не скрываются молча — счётчик внизу говорит, сколько их.
+            var runtimes = apps.Where(a => a.LooksLikeRuntime).ToList();
+            var visible = showRuntimes ? apps : apps.Where(a => !a.LooksLikeRuntime).ToList();
+
+            Console.WriteLine($"Установлено программ: {visible.Count}");
+            Console.WriteLine();
+
+            foreach (var app in visible)
+            {
+                var size = app.EstimatedSizeBytes > 0 ? Format(app.EstimatedSizeBytes) : "—";
+                var scope = app.Scope == InstallScope.User ? " (только для вас)" : string.Empty;
+                var runtime = app.LooksLikeRuntime ? "  [нужна другим программам]" : string.Empty;
+                var cannot = app.CanUninstall ? string.Empty : "  [нет команды удаления]";
+
+                Console.WriteLine($"  {Trim(app.DisplayName, 44),-44} {Trim(app.Version, 14),-14} {size,10}{scope}{runtime}{cannot}");
+            }
+
+            if (!showRuntimes && runtimes.Count > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Скрыто сред выполнения: {runtimes.Count}. Показать: purgex apps --all");
+                Console.WriteLine("От них зависят другие программы, поэтому удалять их вслепую нельзя.");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Размер указан по заявлению самой программы и часто занижен.");
+
+            return 0;
+        }
+
+        private static string Trim(string? value, int length)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return "—";
+            }
+
+            return value.Length <= length ? value : value[..(length - 1)] + "…";
         }
 
         public static async Task<int> CleanAsync(bool dryRun)
