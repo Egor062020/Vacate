@@ -22,6 +22,7 @@ try
         "leftovers" => Commands.Leftovers(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
         "startup" => Commands.Startup(showAll: args.Contains("--all")),
         "extensions" => Commands.Extensions(),
+        "disk" => Commands.Disk(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
         "clean" => await Commands.CleanAsync(dryRun: args.Contains("--dry-run")),
         "history" => await Commands.HistoryAsync(),
         "undo" => await Commands.UndoAsync(args.Skip(1).FirstOrDefault()),
@@ -52,6 +53,7 @@ namespace Vacate.Cli
                   vacate leftovers <имя>   найти следы программы, ничего не удаляя
                   vacate startup           что стартует вместе с Windows (--all: и службы)
                   vacate extensions        расширения браузеров и их права
+                  vacate disk <папка>      куда делось место: крупные файлы, дубли, виды
                   vacate clean --dry-run   полный прогон без единого изменения на диске
                   vacate clean             выполнить очистку
                   vacate history           последние сеансы
@@ -120,6 +122,72 @@ namespace Vacate.Cli
 
             Console.WriteLine();
             Console.WriteLine("Размер указан по заявлению самой программы и часто занижен.");
+
+            return 0;
+        }
+
+        public static int Disk(string? root)
+        {
+            root ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            if (!Directory.Exists(root))
+            {
+                Console.WriteLine($"Папка не найдена: {root}");
+                return 1;
+            }
+
+            Console.WriteLine($"Анализирую: {root}");
+            Console.WriteLine("Это может занять время на больших папках.");
+            Console.WriteLine();
+
+            var result = new DiskAnalyzer(new QuarantinePathCheck()).Analyze(root);
+
+            Console.WriteLine($"Просмотрено файлов: {result.TotalFilesScanned}, всего {Format(result.TotalBytesScanned)}");
+            Console.WriteLine();
+
+            Console.WriteLine("Куда уходит место:");
+            foreach (var category in result.ByCategory.Take(8))
+            {
+                Console.WriteLine($"  {category.Category,-30} {Format(category.TotalBytes),12}   {category.FileCount} шт.");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Самые большие папки:");
+            foreach (var directory in result.LargestDirectories.Take(8))
+            {
+                Console.WriteLine($"  {Trim(Path.GetFileName(directory.Category), 40),-40} {Format(directory.TotalBytes),12}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Самые большие файлы:");
+            foreach (var file in result.LargestFiles.Take(8))
+            {
+                Console.WriteLine($"  {Trim(Path.GetFileName(file.Path), 46),-46} {Format(file.SizeOnDiskBytes),12}");
+            }
+
+            if (result.Duplicates.Count > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Одинаковые файлы (освободится {Format(result.RecoverableFromDuplicates)}):");
+
+                foreach (var group in result.Duplicates.Take(5))
+                {
+                    Console.WriteLine($"  {group.Files.Count} копии по {Format(group.FileSizeBytes)}:");
+
+                    foreach (var file in group.Files)
+                    {
+                        Console.WriteLine($"      {Trim(file.Path, 74)}");
+                    }
+                }
+            }
+
+            // Молчаливый пропуск читается пользователем как «этого нет».
+            if (result.SkipNotes.Count > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine("Что не вошло в подсчёт:");
+                result.SkipNotes.ToList().ForEach(n => Console.WriteLine($"  · {n}"));
+            }
 
             return 0;
         }
