@@ -23,6 +23,7 @@ try
         "startup" => Commands.Startup(showAll: args.Contains("--all")),
         "extensions" => Commands.Extensions(),
         "disk" => Commands.Disk(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
+        "health" => Commands.Health(),
         "clean" => await Commands.CleanAsync(dryRun: args.Contains("--dry-run")),
         "history" => await Commands.HistoryAsync(),
         "undo" => await Commands.UndoAsync(args.Skip(1).FirstOrDefault()),
@@ -54,6 +55,7 @@ namespace Vacate.Cli
                   vacate startup           что стартует вместе с Windows (--all: и службы)
                   vacate extensions        расширения браузеров и их права
                   vacate disk <папка>      куда делось место: крупные файлы, дубли, виды
+                  vacate health            состояние дисков
                   vacate clean --dry-run   полный прогон без единого изменения на диске
                   vacate clean             выполнить очистку
                   vacate history           последние сеансы
@@ -125,6 +127,70 @@ namespace Vacate.Cli
 
             return 0;
         }
+
+        public static int Health()
+        {
+            var disks = new DiskHealthReader().Read();
+
+            if (disks.Count == 0)
+            {
+                Console.WriteLine("Не удалось получить сведения о дисках.");
+                Console.WriteLine("Часть данных доступна только с правами администратора.");
+                return 1;
+            }
+
+            foreach (var disk in disks)
+            {
+                Console.WriteLine($"{disk.Model}  ({disk.MediaType}, {Format(disk.SizeBytes)})");
+                Console.WriteLine($"  Состояние:      {DescribeHealth(disk.Health)}");
+
+                if (disk.TemperatureCelsius is { } temperature)
+                {
+                    Console.WriteLine($"  Температура:    {temperature} °C");
+                }
+
+                if (disk.WearPercent is { } wear)
+                {
+                    Console.WriteLine($"  Износ:          {wear}%");
+                }
+
+                if (disk.PowerOnHours is { } hours)
+                {
+                    Console.WriteLine($"  Наработка:      {hours} ч ({hours / 24 / 365.0:0.#} лет)");
+                }
+
+                if (disk.ReadErrorsTotal is { } errors && errors > 0)
+                {
+                    Console.WriteLine($"  Ошибок чтения:  {errors}");
+                }
+
+                // Молчание диска — это не «всё хорошо», и говорить об этом надо прямо.
+                if (disk.Unavailable.Count > 0)
+                {
+                    Console.WriteLine($"  Диск не сообщает: {string.Join(", ", disk.Unavailable)}");
+                }
+
+                if (disk.NeedsAttention)
+                {
+                    Console.WriteLine("  ВНИМАНИЕ: показатели требуют проверки, сделайте резервную копию важных данных");
+                }
+
+                Console.WriteLine();
+            }
+
+            Console.WriteLine("Показатели берутся у самого диска. Если он их не сообщает,");
+            Console.WriteLine("здесь будет честное «не сообщает», а не выдуманная оценка.");
+
+            return 0;
+        }
+
+        private static string DescribeHealth(DiskHealthStatus status) => status switch
+        {
+            DiskHealthStatus.Healthy => "исправен",
+            DiskHealthStatus.Warning => "есть предупреждения",
+            DiskHealthStatus.Unhealthy => "неисправен",
+            _ => "диск не сообщил (это не значит «всё хорошо»)",
+        };
 
         public static int Disk(string? root)
         {
