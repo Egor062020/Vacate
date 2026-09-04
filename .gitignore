@@ -36,3 +36,7 @@ packages/
 *.tmp
 Thumbs.db
 desktop.ini
+
+# Поставка
+dist/
+publish/
