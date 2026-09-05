@@ -1,0 +1,103 @@
+<UserControl x:Class="Vacate.App.Views.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Style="{StaticResource PageTitle}" Text="Настройки" />
+            <TextBlock Style="{StaticResource PageSubtitle}"
+                       Text="Всё, что программа делает без вашего участия, включается здесь — и здесь же выключается." />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+
+                <!-- Автоматическая очистка -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SectionTitle}" Margin="0,0,0,4" Text="Автоматическая очистка" />
+                        <TextBlock Style="{StaticResource SecondaryText}" Margin="0,0,0,14"
+                                   Text="Задача в планировщике Windows. Выполняются только безопасные категории: временные файлы и кэши. Реестр и программы автоматика не трогает никогда — действие без человека за экраном не должно быть необратимым." />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <RadioButton x:Name="ScheduleOff" GroupName="Schedule" Content="Выключена"
+                                         Foreground="{StaticResource TextPrimaryBrush}" FontFamily="{StaticResource UiFont}"
+                                         VerticalContentAlignment="Center" Margin="0,0,22,0" />
+                            <RadioButton x:Name="ScheduleWeekly" GroupName="Schedule" Content="Раз в неделю"
+                                         Foreground="{StaticResource TextPrimaryBrush}" FontFamily="{StaticResource UiFont}"
+                                         VerticalContentAlignment="Center" Margin="0,0,22,0" />
+                            <RadioButton x:Name="ScheduleMonthly" GroupName="Schedule" Content="Раз в месяц"
+                                         Foreground="{StaticResource TextPrimaryBrush}" FontFamily="{StaticResource UiFont}"
+                                         VerticalContentAlignment="Center" />
+                        </StackPanel>
+
+                        <CheckBox x:Name="ScheduleAtLogon" Content="Ещё и при входе в систему"
+                                  Foreground="{StaticResource TextPrimaryBrush}" FontFamily="{StaticResource UiFont}"
+                                  FontSize="13" Margin="0,0,0,14" />
+
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="ApplyScheduleButton" Style="{StaticResource PrimaryButton}"
+                                    Content="Применить" Click="OnApplySchedule" />
+                            <TextBlock x:Name="ScheduleStatus" Style="{StaticResource SecondaryText}"
+                                       VerticalAlignment="Center" Margin="16,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Область уведомлений -->
+                <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SectionTitle}" Margin="0,0,0,4" Text="Область уведомлений" />
+                        <TextBlock Style="{StaticResource SecondaryText}" Margin="0,0,0,14"
+                                   Text="Значок рядом с часами. Из его меню запускается быстрая очистка — без открытия окна и без вопросов." />
+
+                        <CheckBox x:Name="TrayEnabled" Content="Показывать значок рядом с часами"
+                                  Foreground="{StaticResource TextPrimaryBrush}" FontFamily="{StaticResource UiFont}"
+                                  FontSize="13" Margin="0,0,0,10" Click="OnTraySettingChanged" />
+
+                        <CheckBox x:Name="MinimizeToTray" Content="Кнопка «закрыть» прячет программу, а не выходит из неё"
+                                  Foreground="{StaticResource TextPrimaryBrush}" FontFamily="{StaticResource UiFont}"
+                                  FontSize="13" Click="OnTraySettingChanged" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Обновления -->
+                <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SectionTitle}" Margin="0,0,0,4" Text="Обновления" />
+                        <TextBlock Style="{StaticResource SecondaryText}" Margin="0,0,0,14"
+                                   Text="Единственное обращение программы в сеть: раз в сутки она спрашивает страницу проекта, нет ли версии новее. Ничего не скачивается и не устанавливается само." />
+
+                        <CheckBox x:Name="UpdatesEnabled" Content="Проверять наличие новой версии"
+                                  Foreground="{StaticResource TextPrimaryBrush}" FontFamily="{StaticResource UiFont}"
+                                  FontSize="13" Click="OnUpdateSettingChanged" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Где лежит сохранённое -->
+                <Border Style="{StaticResource Card}" Margin="0,14,0,24">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SectionTitle}" Margin="0,0,0,4" Text="Где лежит то, что можно вернуть" />
+                        <TextBlock Style="{StaticResource SecondaryText}" Margin="0,0,0,14"
+                                   Text="Удалённые каталоги хранятся 30 дней, копии ветвей реестра — до тех пор, пока вы их не удалите сами." />
+
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource SecondaryButton}" Content="Открыть карантин"
+                                    Click="OnOpenQuarantine" Margin="0,0,10,0" />
+                            <Button Style="{StaticResource SecondaryButton}" Content="Открыть копии реестра"
+                                    Click="OnOpenBackups" Margin="0,0,10,0" />
+                            <Button Style="{StaticResource SecondaryButton}" Content="Создать точку восстановления"
+                                    Click="OnCreateRestorePoint" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

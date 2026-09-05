@@ -214,23 +214,40 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="CheckBox">
-                    <Grid>
-                        <Border x:Name="Box" Width="17" Height="17"
-                                CornerRadius="4"
-                                Background="Transparent"
-                                BorderBrush="{StaticResource BorderBrush}"
-                                BorderThickness="1.5" />
+                    <!--
+                        Две колонки: квадрат и подпись. Разметка без второй колонки
+                        оставляла подпись ненарисованной, а сам квадрат уезжал
+                        на середину строки — видно это было только на снимке экрана.
+                    -->
+                    <Grid Background="Transparent">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
 
-                        <!-- Галочка рисуется линиями: значок из шрифта зависел бы
-                             от того, что установлено на машине пользователя. -->
-                        <Path x:Name="Check"
-                              Data="M 4 8.5 L 7 11.5 L 13 5"
-                              Stroke="{StaticResource TextPrimaryBrush}"
-                              StrokeThickness="2"
-                              StrokeStartLineCap="Round"
-                              StrokeEndLineCap="Round"
-                              StrokeLineJoin="Round"
-                              Opacity="0" />
+                        <Grid Grid.Column="0" Width="17" Height="17" VerticalAlignment="Top" Margin="0,1,0,0">
+                            <Border x:Name="Box"
+                                    CornerRadius="4"
+                                    Background="Transparent"
+                                    BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1.5" />
+
+                            <!-- Галочка рисуется линиями: значок из шрифта зависел бы
+                                 от того, что установлено на машине пользователя. -->
+                            <Path x:Name="Check"
+                                  Data="M 3.5 8.5 L 6.5 11.5 L 13 4.5"
+                                  Stroke="{StaticResource TextPrimaryBrush}"
+                                  StrokeThickness="2"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  Opacity="0" />
+                        </Grid>
+
+                        <ContentPresenter Grid.Column="1"
+                                          VerticalAlignment="Center"
+                                          Margin="10,0,0,0"
+                                          RecognizesAccessKey="True" />
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">

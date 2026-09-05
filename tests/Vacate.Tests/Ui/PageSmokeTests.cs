@@ -96,6 +96,28 @@ public sealed class PageSmokeTests
         => RunOnUiThread(() => Assert.NotNull(new HealthPage()));
 
     [Fact]
+    public void Раздел_настроек_создаётся()
+        => RunOnUiThread(() => Assert.NotNull(new SettingsPage()));
+
+    [Fact]
+    public void Значок_области_уведомлений_рисуется()
+    {
+        // Значок собирается из примитивов, а не берётся из файла. Если рисование
+        // не удалось, программа продолжит работать, а значок будет невидимым —
+        // человек решит, что настройка не сработала.
+        RunOnUiThread(() =>
+        {
+            var draw = typeof(App.MainWindow).Assembly
+                .GetType("Vacate.App.TrayIcon")!
+                .GetMethod("Draw", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+            using var icon = (IDisposable?)draw.Invoke(null, null);
+
+            Assert.NotNull(icon);
+        });
+    }
+
+    [Fact]
     public void Главное_окно_создаётся_со_всеми_разделами()
     {
         // Самая близкая к реальности проверка: окно строит навигацию и первый раздел

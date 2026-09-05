@@ -54,6 +54,7 @@
                     <RadioButton x:Name="NavExtensions" Style="{StaticResource NavButton}" Content="Расширения браузеров" Checked="OnNavigate" Tag="extensions" />
                     <RadioButton x:Name="NavDisk" Style="{StaticResource NavButton}" Content="Место на диске" Checked="OnNavigate" Tag="disk" />
                     <RadioButton x:Name="NavHealth" Style="{StaticResource NavButton}" Content="Состояние системы" Checked="OnNavigate" Tag="health" />
+                    <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Content="Настройки" Checked="OnNavigate" Tag="settings" />
                 </StackPanel>
 
                 <TextBlock Grid.Row="2" x:Name="VersionLabel" Style="{StaticResource SecondaryText}"

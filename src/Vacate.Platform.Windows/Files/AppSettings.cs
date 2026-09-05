@@ -25,6 +25,18 @@ public sealed record AppSettings
     /// <summary>Версия, о которой человек попросил больше не напоминать.</summary>
     public string? DismissedVersion { get; init; }
 
+    /// <summary>Держать значок в области уведомлений.</summary>
+    public bool ShowTrayIcon { get; init; }
+
+    /// <summary>
+    /// Закрытие окна прячет программу в область уведомлений вместо выхода.
+    /// </summary>
+    /// <remarks>
+    /// По умолчанию выключено. Программа, которая не закрывается по кнопке «закрыть»,
+    /// воспринимается как навязчивая — такое поведение человек должен включить сам.
+    /// </remarks>
+    public bool MinimizeToTray { get; init; }
+
     private static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Vacate",

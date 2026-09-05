@@ -15,6 +15,7 @@ public partial class MainWindow : Window
     private int _currentIndex;
     private string? _updateUrl;
     private Version? _updateVersion;
+    private TrayIcon? _tray;
 
     public MainWindow()
     {
@@ -25,7 +26,51 @@ public partial class MainWindow : Window
 
         Navigate("dashboard", animate: false);
 
-        Loaded += async (_, _) => await CheckForUpdatesAsync();
+        SettingsPage.TrayPreferenceChanged += SetTrayIcon;
+
+        Loaded += async (_, _) =>
+        {
+            SetTrayIcon(AppSettings.Load().ShowTrayIcon);
+            await CheckForUpdatesAsync();
+        };
+
+        Closing += OnClosing;
+        Closed += (_, _) =>
+        {
+            SettingsPage.TrayPreferenceChanged -= SetTrayIcon;
+
+            // Значок, не убранный явно, висит в области уведомлений
+            // до тех пор, пока по нему не проведут мышью.
+            _tray?.Dispose();
+            _tray = null;
+        };
+    }
+
+    private void SetTrayIcon(bool show)
+    {
+        if (show && _tray is null)
+        {
+            _tray = new TrayIcon(this);
+        }
+        else if (!show && _tray is not null)
+        {
+            _tray.Dispose();
+            _tray = null;
+        }
+    }
+
+    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        // Прятать программу вместо выхода можно только когда значок есть
+        // и человек сам этого попросил: иначе окно, которое не закрывается,
+        // выглядит как поломка.
+        var settings = AppSettings.Load();
+
+        if (settings is { ShowTrayIcon: true, MinimizeToTray: true } && _tray is not null)
+        {
+            e.Cancel = true;
+            Hide();
+        }
     }
 
     /// <summary>
@@ -197,7 +242,8 @@ public partial class MainWindow : Window
         "startup" => 3,
         "extensions" => 4,
         "disk" => 5,
-        _ => 6,
+        "health" => 6,
+        _ => 7,
     };
 
     private static UserControl CreatePage(string key) => key switch
@@ -208,6 +254,7 @@ public partial class MainWindow : Window
         "extensions" => new ExtensionsPage(),
         "disk" => new DiskPage(),
         "health" => new HealthPage(),
+        "settings" => new SettingsPage(),
         _ => new DashboardPage(),
     };
 

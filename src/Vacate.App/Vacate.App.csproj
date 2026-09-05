@@ -11,8 +11,26 @@
     <RootNamespace>Vacate.App</RootNamespace>
     <AssemblyName>Vacate</AssemblyName>
     <UseWPF>true</UseWPF>
+
+    <!--
+      Значок в области уведомлений. Собственной реализации в WPF нет, а системная
+      живёт в наборе Windows Forms: смешивание поддерживается и обходится дешевле
+      ручной работы с системными вызовами ради одного значка.
+    -->
+    <UseWindowsForms>true</UseWindowsForms>
+
     <ApplicationIcon></ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Набор Windows Forms добавляет свои пространства имён во все файлы разом,
+      и половина имён в них совпадает с именами WPF: Application, UserControl, Brush.
+      Подключение остаётся только там, где оно действительно нужно, — в файле значка.
+    -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Vacate.Abstractions\Vacate.Abstractions.csproj" />
