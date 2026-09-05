@@ -199,75 +199,78 @@ public partial class UninstallWindow : Window
             return;
         }
 
-        EnterStep(Step.Running, "Убираю следы", "Каталоги перемещаются в карантин, ветки реестра удаляются.");
-        BusyText.Text = $"Удаление: {selected.Count} объектов…";
+        var plan = new LeftoverPlanBuilder().Build(_app, selected);
 
-        var report = await Task.Run(async () =>
-        {
-            var plan = new LeftoverPlanBuilder().Build(_app, selected);
-
-            if (plan.TotalCount == 0)
-            {
-                return null;
-            }
-
-            var quarantine = new FileSystemQuarantine();
-            var journal = new JsonlOperationJournal(Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vacate", "journal"));
-            var volumes = new VolumeInfoProvider();
-
-            var executor = new PlanExecutor(
-                new RealEffectSink(quarantine),
-                journal,
-                volumes,
-                new UiEnvironmentProvider(volumes),
-                GuardSet.Group(CleanPage.BuildPolicy()),
-                GuardSet.Item(),
-                isDryRun: false);
-
-            return await executor.ExecuteAsync(plan, null, CancellationToken.None);
-        });
-
-        if (report is null)
+        if (plan.TotalCount == 0)
         {
             ShowResult("Удалять нечего", "Отмеченные объекты исчезли, пока вы читали список.");
             return;
         }
 
-        ShowResult("Готово", Summarize(report));
+        var elevating = ElevatedExecution.WillAskForRights(plan, dryRun: false);
+
+        EnterStep(Step.Running, "Убираю следы",
+            elevating
+                ? "Часть следов лежит в системных папках: Windows сейчас спросит права администратора."
+                : "Каталоги перемещаются в карантин, ветки реестра удаляются.");
+
+        BusyText.Text = $"Удаление: {selected.Count} объектов…";
+
+        var summary = await ElevatedExecution.RunAsync(plan, dryRun: false);
+
+        ShowResult(summary.Succeeded > 0 ? "Готово" : "Ничего не удалено", Summarize(summary));
     }
 
-    private static string Summarize(ExecutionReport report)
+    private static string Summarize(RunSummary summary)
     {
-        var lines = new List<string>
-        {
-            $"Удалено объектов: {report.Succeeded}",
+        var lines = new List<string>();
 
-            // Две цифры рядом — суть честного счётчика: заявленный размер и то,
-            // насколько на самом деле изменилось свободное место.
-            $"Реально освободилось: {Format.Size(report.ActuallyFreedBytes)} из заявленных {Format.Size(report.ClaimedBytes)}",
-        };
-
-        if (report.Skipped > 0)
+        if (summary.Error is not null && summary.Succeeded == 0)
         {
-            lines.Add($"Пропущено: {report.Skipped}");
+            // Отказ в правах — решение человека, а не сбой программы.
+            lines.Add(summary.Error);
+            lines.Add(string.Empty);
+            lines.Add("Следы остались на месте. Программа при этом уже удалена.");
+
+            return string.Join(Environment.NewLine, lines);
         }
 
-        if (report.Failed > 0)
+        lines.Add($"Удалено объектов: {summary.Succeeded}");
+
+        // Две цифры рядом — суть честного счётчика: заявленный размер и то,
+        // насколько на самом деле изменилось свободное место.
+        lines.Add($"Реально освободилось: {Format.Size(summary.ActuallyFreedBytes)} из заявленных {Format.Size(summary.ClaimedBytes)}");
+
+        if (summary.Elevated)
         {
-            lines.Add($"Не удалось удалить: {report.Failed}");
+            lines.Add("Выполнено отдельным процессом с правами администратора.");
         }
 
-        if (report.Denied > 0)
+        if (summary.Skipped > 0)
         {
-            lines.Add($"Отклонено проверками безопасности: {report.Denied}");
+            lines.Add($"Пропущено: {summary.Skipped}");
         }
 
-        if (report.Succeeded > 0)
+        if (summary.Failed > 0)
+        {
+            lines.Add($"Не удалось удалить: {summary.Failed}");
+        }
+
+        if (summary.Denied > 0)
+        {
+            lines.Add($"Отклонено проверками безопасности: {summary.Denied}");
+        }
+
+        if (summary.Error is not null)
+        {
+            lines.Add(summary.Error);
+        }
+
+        if (summary.Succeeded > 0 && summary.SessionId is not null)
         {
             lines.Add(string.Empty);
             lines.Add("Каталоги лежат в карантине 30 дней. Вернуть их можно командой:");
-            lines.Add($"vacate-cli undo {report.SessionId}");
+            lines.Add($"vacate-cli undo {summary.SessionId}");
             lines.Add(string.Empty);
             lines.Add("Ветки реестра удалены без карантина — так честнее было сказано до нажатия.");
         }

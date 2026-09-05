@@ -53,7 +53,7 @@
                     <RadioButton x:Name="NavStartup" Style="{StaticResource NavButton}" Content="Автозагрузка" Checked="OnNavigate" Tag="startup" />
                     <RadioButton x:Name="NavExtensions" Style="{StaticResource NavButton}" Content="Расширения браузеров" Checked="OnNavigate" Tag="extensions" />
                     <RadioButton x:Name="NavDisk" Style="{StaticResource NavButton}" Content="Место на диске" Checked="OnNavigate" Tag="disk" />
-                    <RadioButton x:Name="NavHealth" Style="{StaticResource NavButton}" Content="Состояние дисков" Checked="OnNavigate" Tag="health" />
+                    <RadioButton x:Name="NavHealth" Style="{StaticResource NavButton}" Content="Состояние системы" Checked="OnNavigate" Tag="health" />
                 </StackPanel>
 
                 <TextBlock Grid.Row="2" x:Name="VersionLabel" Style="{StaticResource SecondaryText}"
@@ -75,6 +75,35 @@
                     <Button Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" ToolTip="Развернуть" />
                     <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="OnClose" ToolTip="Закрыть" />
                 </StackPanel>
+            </Border>
+
+            <!--
+                Сообщение о новой версии. Полоса, а не всплывающее окно: программа
+                открыта ради дела, и перекрывать его сообщением, которое подождёт,
+                значит мешать. Полоса скрыта, пока обновления нет.
+            -->
+            <Border x:Name="UpdateBanner" Grid.Row="1" Visibility="Collapsed"
+                    VerticalAlignment="Top" Margin="34,0,34,0" Padding="16,12"
+                    Background="{StaticResource CardBrush}" CornerRadius="{StaticResource ButtonRadius}"
+                    BorderBrush="{StaticResource AccentDimBrush}" BorderThickness="1" Panel.ZIndex="10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" x:Name="UpdateText" Style="{StaticResource BodyText}"
+                               VerticalAlignment="Center" Margin="0,0,16,0" />
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button Style="{StaticResource PrimaryButton}" Content="Открыть страницу"
+                                Padding="14,7" Click="OnOpenUpdatePage" />
+                        <Button Style="{StaticResource SecondaryButton}" Content="Не сейчас"
+                                Padding="14,7" Margin="8,0,0,0" Click="OnDismissUpdate" />
+                        <Button Style="{StaticResource SecondaryButton}" Content="Не проверять больше"
+                                Padding="14,7" Margin="8,0,0,0" Click="OnDisableUpdates" />
+                    </StackPanel>
+                </Grid>
             </Border>
 
             <!-- Содержимое раздела. Смена сопровождается сдвигом и растворением. -->

@@ -52,11 +52,21 @@ public partial class CleanPage : UserControl
 
     private async void OnClean(object sender, RoutedEventArgs e)
     {
+        var message = $"Будет удалено {_plan?.TotalCount ?? 0} объектов, около {Format.Size(_plan?.TotalSizeOnDiskBytes ?? 0)}.\n\n"
+                      + "Это временные файлы и кэши: они создаются заново, но восстановить их будет нельзя.";
+
+        // Окно системы с запросом прав появляется внезапно, и человек, не понимающий,
+        // откуда оно, обычно нажимает «Нет». Предупреждаем заранее.
+        if (_plan is not null && ElevatedExecution.WillAskForRights(_plan, dryRun: false))
+        {
+            message += "\n\nЧасть файлов лежит в системных папках, поэтому Windows спросит "
+                       + "права администратора. Само окно программы этих прав не получает: "
+                       + "работу выполнит отдельный процесс.";
+        }
+
         // Удаление безвозвратно — говорим это прямо и до, а не после.
         var confirmed = MessageBox.Show(
-            $"Будет удалено {_plan?.TotalCount ?? 0} объектов, около {Format.Size(_plan?.TotalSizeOnDiskBytes ?? 0)}.\n\n" +
-            "Это временные файлы и кэши: они создаются заново, но восстановить их будет нельзя.\n\n" +
-            "Продолжить?",
+            message + "\n\nПродолжить?",
             "Очистка",
             MessageBoxButton.OKCancel,
             MessageBoxImage.Warning);
@@ -78,27 +88,9 @@ public partial class CleanPage : UserControl
 
         try
         {
-            var report = await Task.Run(async () =>
-            {
-                var quarantine = new FileSystemQuarantine();
-                var journal = new JsonlOperationJournal(Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vacate", "journal"));
-                var volumes = new VolumeInfoProvider();
+            var summary = await ElevatedExecution.RunAsync(_plan, dryRun);
 
-                // Весь механизм предпросмотра — в выборе приёмника действий.
-                IEffectSink sink = dryRun ? new RecordingEffectSink() : new RealEffectSink(quarantine);
-
-                var executor = new PlanExecutor(
-                    sink, journal, volumes,
-                    new UiEnvironmentProvider(volumes),
-                    GuardSet.Group(BuildPolicy()),
-                    GuardSet.Item(),
-                    dryRun);
-
-                return await executor.ExecuteAsync(_plan, null, CancellationToken.None);
-            });
-
-            ShowResult(report, dryRun);
+            ShowResult(summary);
         }
         finally
         {
@@ -106,13 +98,22 @@ public partial class CleanPage : UserControl
         }
     }
 
-    private void ShowResult(ExecutionReport report, bool dryRun)
+    private void ShowResult(RunSummary summary)
     {
         ResultCard.Visibility = Visibility.Visible;
 
-        if (dryRun)
+        if (summary.Error is not null && summary.Succeeded == 0)
         {
-            ResultClaimed.Text = $"Было бы обработано: {report.Succeeded} объектов, {Format.Size(report.ClaimedBytes)}.";
+            // Отказ в правах — не сбой, а решение человека. И звучать должно так же.
+            ResultClaimed.Text = summary.Error;
+            ResultActual.Text = "На диске ничего не изменилось.";
+            DiscrepancyList.ItemsSource = null;
+            return;
+        }
+
+        if (summary.WasDryRun)
+        {
+            ResultClaimed.Text = $"Было бы обработано: {summary.Succeeded} объектов, {Format.Size(summary.ClaimedBytes)}.";
             ResultActual.Text = "На диске ничего не изменилось.";
             DiscrepancyList.ItemsSource = null;
             return;
@@ -120,12 +121,21 @@ public partial class CleanPage : UserControl
 
         // Две цифры рядом. Конкуренты показывают только первую,
         // и она почти всегда больше действительной.
-        ResultClaimed.Text = $"Удалено: {report.Succeeded} объектов, заявлено {Format.Size(report.ClaimedBytes)}.";
-        ResultActual.Text = $"Реально освободилось: {Format.Size(report.ActuallyFreedBytes)}";
+        ResultClaimed.Text = $"Удалено: {summary.Succeeded} объектов, заявлено {Format.Size(summary.ClaimedBytes)}."
+                             + (summary.Elevated ? " Выполнено процессом с правами администратора." : string.Empty);
 
-        DiscrepancyList.ItemsSource = report.Discrepancies
+        ResultActual.Text = $"Реально освободилось: {Format.Size(summary.ActuallyFreedBytes)}";
+
+        var notes = summary.Discrepancies
             .Select(d => $"· {Explain(d.Kind)} — {Format.Size(d.Bytes)}" + (d.Detail is null ? string.Empty : $" ({d.Detail})"))
             .ToList();
+
+        if (summary.Error is not null)
+        {
+            notes.Insert(0, $"· {summary.Error}");
+        }
+
+        DiscrepancyList.ItemsSource = notes;
     }
 
     private static string Explain(DiscrepancyKind kind) => kind switch

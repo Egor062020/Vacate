@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using Vacate.App.Views;
+using Vacate.Platform.Windows.Files;
 
 namespace Vacate.App;
 
@@ -12,6 +13,8 @@ public partial class MainWindow : Window
 {
     private readonly Dictionary<string, UserControl> _pages = [];
     private int _currentIndex;
+    private string? _updateUrl;
+    private Version? _updateVersion;
 
     public MainWindow()
     {
@@ -21,6 +24,113 @@ public partial class MainWindow : Window
         VersionLabel.Text = version is null ? string.Empty : $"версия {version.Major}.{version.Minor}.{version.Build}";
 
         Navigate("dashboard", animate: false);
+
+        Loaded += async (_, _) => await CheckForUpdatesAsync();
+    }
+
+    /// <summary>
+    /// Тихо спросить, нет ли новой версии.
+    /// </summary>
+    /// <remarks>
+    /// Единственное обращение программы в сеть. Оно выполняется не чаще раза в сутки
+    /// и полностью отключается — это обещано в политике подписи, и обещание должно
+    /// иметь способ быть исполненным.
+    ///
+    /// Сбой проверки не показывается никак: отсутствие сети — обычное состояние,
+    /// а не событие, ради которого человека стоит отвлекать.
+    /// </remarks>
+    private async Task CheckForUpdatesAsync()
+    {
+        var settings = AppSettings.Load();
+
+        if (!settings.ShouldCheckNow(DateTime.UtcNow))
+        {
+            return;
+        }
+
+        var current = Assembly.GetExecutingAssembly().GetName().Version;
+
+        if (current is null)
+        {
+            return;
+        }
+
+        var result = await new UpdateChecker().CheckAsync(current);
+
+        settings = settings with { LastUpdateCheckUtc = DateTime.UtcNow };
+        settings.Save();
+
+        if (result.Status != UpdateStatus.UpdateAvailable || result.LatestVersion is null)
+        {
+            return;
+        }
+
+        // Версия, о которой уже просили не напоминать, больше не всплывает.
+        if (string.Equals(settings.DismissedVersion, result.LatestVersion.ToString(), StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _updateUrl = result.DownloadUrl;
+        _updateVersion = result.LatestVersion;
+
+        UpdateText.Text = $"Вышла версия {result.LatestVersion}. Установка не начнётся сама: "
+                          + "пока у программы нет подписи кода, запускать обновление без вашего ведома нельзя.";
+
+        UpdateBanner.Visibility = Visibility.Visible;
+    }
+
+    private void OnOpenUpdatePage(object sender, RoutedEventArgs e)
+    {
+        if (_updateUrl is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // Открываем страницу выпуска в браузере, а не качаем файл сами:
+            // без проверки подписи скачивать и запускать чужой код нельзя,
+            // а человек в браузере видит, что именно берёт.
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "https://github.com/Egor062020/Vacate/releases/latest",
+                UseShellExecute = true,
+            });
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // Браузера нет или он не открылся. Настаивать не будем.
+        }
+
+        UpdateBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void OnDismissUpdate(object sender, RoutedEventArgs e)
+    {
+        if (_updateVersion is not null)
+        {
+            var settings = AppSettings.Load() with { DismissedVersion = _updateVersion.ToString() };
+            settings.Save();
+        }
+
+        UpdateBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void OnDisableUpdates(object sender, RoutedEventArgs e)
+    {
+        var settings = AppSettings.Load() with { CheckForUpdates = false };
+        settings.Save();
+
+        UpdateBanner.Visibility = Visibility.Collapsed;
+
+        MessageBox.Show(
+            "Программа больше не будет обращаться в сеть.\n\n"
+            + "Проверить наличие новой версии можно вручную на странице проекта:\n"
+            + "github.com/Egor062020/Vacate/releases",
+            "Обновления отключены",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
     }
 
     private void OnNavigate(object sender, RoutedEventArgs e)

@@ -56,11 +56,24 @@ public enum DeleteDisposition
 /// </remarks>
 public sealed record LocalizedText
 {
-    private LocalizedText(string? resourceKey, IReadOnlyDictionary<string, string>? translations, object[] args)
+    /// <summary>
+    /// Конструктор для чтения из JSON.
+    /// </summary>
+    /// <remarks>
+    /// Открыт не для удобства, а по необходимости: этот тип едет через границу процессов
+    /// вместе с планом, когда операции выполняет отдельный процесс с правами администратора.
+    /// С закрытым конструктором чтение плана на той стороне падало, поднятый процесс
+    /// не делал ничего — а окно программы рапортовало об успехе.
+    ///
+    /// Создавать текст напрямую всё равно не нужно: для этого есть два именованных способа
+    /// ниже, и они говорят, откуда текст взялся.
+    /// </remarks>
+    [System.Text.Json.Serialization.JsonConstructor]
+    public LocalizedText(string? resourceKey, IReadOnlyDictionary<string, string>? translations, object[] args)
     {
         ResourceKey = resourceKey;
         Translations = translations;
-        Args = args;
+        Args = args ?? [];
     }
 
     /// <summary>Ключ строки в ресурсах сборки. Задан, если текст встроенный.</summary>

@@ -82,6 +82,7 @@ public sealed class ElevationBroker
         }
 
         var planPath = Path.Combine(Path.GetTempPath(), $"vacate-plan-{Guid.NewGuid():N}.json");
+        var reportPath = Path.Combine(Path.GetTempPath(), $"vacate-report-{Guid.NewGuid():N}.json");
 
         try
         {
@@ -90,7 +91,7 @@ public sealed class ElevationBroker
             using var process = Process.Start(new ProcessStartInfo
             {
                 FileName = executorPath,
-                Arguments = $"--execute-plan \"{planPath}\"",
+                Arguments = $"--execute-plan \"{planPath}\" --report \"{reportPath}\"",
 
                 // Запрос повышения прав через оболочку: система показывает
                 // штатное окно подтверждения. Это не обход проверки, а её вызов.
@@ -107,9 +108,18 @@ public sealed class ElevationBroker
 
             await process.WaitForExitAsync(ct).ConfigureAwait(false);
 
-            return process.ExitCode == 0
-                ? new ElevationOutcome(true, "Выполнено")
-                : new ElevationOutcome(false, $"Исполнитель завершился с кодом {process.ExitCode}");
+            var report = await ReadReportAsync(reportPath, ct).ConfigureAwait(false);
+
+            if (process.ExitCode == 0)
+            {
+                return new ElevationOutcome(true, "Выполнено", report);
+            }
+
+            // Причина отказа приходит из отчёта: код возврата человеку ничего не говорит.
+            return new ElevationOutcome(
+                false,
+                report?.Error ?? $"Исполнитель завершился с кодом {process.ExitCode}",
+                report);
         }
         catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
@@ -124,17 +134,43 @@ public sealed class ElevationBroker
         finally
         {
             // План содержит пути пользователя — не оставляем его во временной папке.
-            try
+            Discard(planPath);
+            Discard(reportPath);
+        }
+    }
+
+    private static async Task<ElevatedRunReport?> ReadReportAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            if (!File.Exists(path))
             {
-                if (File.Exists(planPath))
-                {
-                    File.Delete(planPath);
-                }
+                return null;
             }
-            catch (IOException)
+
+            return JsonSerializer.Deserialize<ElevatedRunReport>(
+                await File.ReadAllTextAsync(path, ct).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            // Отчёта нет или он повреждён. Само выполнение это не отменяет,
+            // и сказать об этом честнее, чем показать выдуманные цифры.
+            return null;
+        }
+    }
+
+    private static void Discard(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
             {
-                // Исполнитель мог ещё держать файл. Он будет убран обычной очисткой.
+                File.Delete(path);
             }
+        }
+        catch (IOException)
+        {
+            // Исполнитель мог ещё держать файл. Он будет убран обычной очисткой.
         }
     }
 
@@ -171,4 +207,28 @@ public sealed class ElevationBroker
 
 /// <param name="Success">Операция выполнена.</param>
 /// <param name="Message">Пояснение человеческим языком.</param>
-public sealed record ElevationOutcome(bool Success, string Message);
+/// <param name="Report">
+/// Что именно сделал поднятый процесс. Пустая ссылка, если он не успел отчитаться.
+/// </param>
+public sealed record ElevationOutcome(bool Success, string Message, ElevatedRunReport? Report = null);
+
+/// <summary>
+/// Отчёт поднятого процесса.
+/// </summary>
+/// <remarks>
+/// Отдельный тип, а не полный отчёт исполнения: через границу процессов передаётся
+/// только то, что интерфейс покажет человеку. Без этих цифр честный счётчик показывал бы
+/// ноль после каждой операции с повышением прав — то есть врал бы ровно там,
+/// где работа была самой заметной.
+/// </remarks>
+/// <param name="SessionId">Сеанс в журнале: по нему выполняется откат.</param>
+/// <param name="Error">Что помешало, если выполнение не состоялось.</param>
+public sealed record ElevatedRunReport(
+    int Succeeded,
+    int Skipped,
+    int Failed,
+    int Denied,
+    long ClaimedBytes,
+    long ActuallyFreedBytes,
+    string? SessionId,
+    string? Error);

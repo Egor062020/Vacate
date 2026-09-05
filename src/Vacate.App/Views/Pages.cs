@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using Vacate.Abstractions.Model;
 using Vacate.Platform.Windows.Files;
@@ -186,15 +188,120 @@ public sealed class DiskPage : ListPage
     }
 }
 
-/// <summary>Состояние дисков.</summary>
+/// <summary>Состояние системы: накопители и целостность системных файлов.</summary>
 public sealed class HealthPage : ListPage
 {
     public HealthPage()
     {
         Configure(
-            "Состояние дисков",
+            "Состояние системы",
             "Показатели берутся у самих накопителей. Если диск их не сообщает, здесь будет честное «не сообщает», а не выдуманная оценка.",
-            LoadAsync);
+            LoadAsync,
+            extraButtonText: "Проверить целостность системы",
+            extraAction: CheckIntegrityAsync,
+            requiresSelection: false);
+    }
+
+    /// <summary>
+    /// Запустить штатную проверку целостности системных файлов.
+    /// </summary>
+    /// <remarks>
+    /// Проверка требует прав администратора, которых у окна программы нет намеренно,
+    /// поэтому её выполняет отдельный процесс. Его окно остаётся видимым: проверка идёт
+    /// от десяти минут до сорока, и человек, глядящий всё это время на неподвижную полосу,
+    /// решит, что программа зависла, — а прервать проверку всё равно нельзя.
+    /// </remarks>
+    private async Task CheckIntegrityAsync()
+    {
+        var confirmed = MessageBox.Show(
+            "Windows проверит свои системные файлы и восстановит повреждённые.\n\n"
+            + "Это занимает от 10 до 40 минут. Остановить проверку нельзя: закрытие её окна "
+            + "работу не прервёт.\n\n"
+            + "Откроется окно с ходом проверки, и Windows запросит права администратора.\n\n"
+            + "Запустить?",
+            "Проверка целостности",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+
+        if (confirmed != MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        var executor = Path.Combine(AppContext.BaseDirectory, "vacate-cli.exe");
+
+        if (!File.Exists(executor))
+        {
+            MessageBox.Show(
+                "Рядом с программой нет файла vacate-cli.exe, который выполняет проверку.\n\n"
+                + "Похоже, поставка неполная — переустановите программу.",
+                "Проверка целостности",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+
+            return;
+        }
+
+        var reportPath = Path.Combine(Path.GetTempPath(), $"vacate-integrity-{Guid.NewGuid():N}.json");
+
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = executor,
+                Arguments = $"integrity --report \"{reportPath}\"",
+
+                // Запрос прав через оболочку: система показывает своё штатное окно.
+                UseShellExecute = true,
+                Verb = "runas",
+            });
+
+            if (process is null)
+            {
+                return;
+            }
+
+            await process.WaitForExitAsync();
+
+            ShowIntegrityOutcome(reportPath);
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // Отказ в правах — решение человека, а не сбой. Молчим.
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(reportPath))
+                {
+                    File.Delete(reportPath);
+                }
+            }
+            catch (IOException)
+            {
+                // Останется во временной папке и будет убран обычной очисткой.
+            }
+        }
+    }
+
+    private static void ShowIntegrityOutcome(string reportPath)
+    {
+        string message;
+
+        try
+        {
+            message = File.Exists(reportPath)
+                ? JsonSerializer.Deserialize<IntegrityReport>(File.ReadAllText(reportPath))?.Message
+                  ?? "Проверка завершилась, но итог прочитать не удалось."
+                : "Проверка завершилась, но итог не дошёл до программы.";
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            message = "Проверка завершилась, но итог прочитать не удалось.";
+        }
+
+        MessageBox.Show(message, "Проверка целостности", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private static async Task<(IReadOnlyList<ListRow>, string)> LoadAsync(CancellationToken ct)

@@ -33,6 +33,7 @@ public partial class ListPage : UserControl
 {
     private Func<CancellationToken, Task<(IReadOnlyList<ListRow> Rows, string Status)>>? _loader;
     private Func<Task>? _extraAction;
+    private bool _requiresSelection = true;
 
     public ListPage()
     {
@@ -43,30 +44,35 @@ public partial class ListPage : UserControl
     protected ListRow? Selected => Items.SelectedItem as ListRow;
 
     /// <summary>Настроить страницу под конкретный раздел.</summary>
-    /// <param name="extraButtonText">
-    /// Надпись на дополнительной кнопке. Кнопка остаётся недоступной, пока строка
-    /// не выбрана: действие без выбранной цели выполнить не над чем, и предложение
-    /// нажать её раньше времени было бы обманом.
+    /// <param name="extraButtonText">Надпись на дополнительной кнопке.</param>
+    /// <param name="requiresSelection">
+    /// Действию нужна выбранная строка. Тогда кнопка недоступна, пока строка не выбрана:
+    /// предлагать нажатие, которому не над чем работать, — обман.
     /// </param>
     protected void Configure(
         string title,
         string subtitle,
         Func<CancellationToken, Task<(IReadOnlyList<ListRow> Rows, string Status)>> loader,
         string? extraButtonText = null,
-        Func<Task>? extraAction = null)
+        Func<Task>? extraAction = null,
+        bool requiresSelection = true)
     {
         TitleText.Text = title;
         SubtitleText.Text = subtitle;
         _loader = loader;
         _extraAction = extraAction;
+        _requiresSelection = requiresSelection;
 
         if (extraButtonText is not null)
         {
             ExtraButton.Content = extraButtonText;
             ExtraButton.Visibility = Visibility.Visible;
-            ExtraButton.IsEnabled = false;
+            ExtraButton.IsEnabled = !requiresSelection;
 
-            Items.SelectionChanged += (_, _) => ExtraButton.IsEnabled = Selected is not null;
+            if (requiresSelection)
+            {
+                Items.SelectionChanged += (_, _) => ExtraButton.IsEnabled = Selected is not null;
+            }
         }
 
         Loaded += async (_, _) =>
@@ -97,7 +103,7 @@ public partial class ListPage : UserControl
         }
         finally
         {
-            ExtraButton.IsEnabled = Selected is not null;
+            ExtraButton.IsEnabled = !_requiresSelection || Selected is not null;
         }
     }
 

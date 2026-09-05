@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Vacate.Abstractions.Execution;
 using Vacate.Abstractions.Model;
 using Vacate.Abstractions.Safety;
@@ -28,8 +29,13 @@ try
         "extensions" => Commands.Extensions(),
         "disk" => Commands.Disk(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
         "health" => Commands.Health(),
+        "integrity" => await Commands.IntegrityAsync(
+            reportPath: args.SkipWhile(a => a != "--report").Skip(1).FirstOrDefault()),
         "schedule" => Commands.Schedule(args.Skip(1).ToArray()),
         "--quiet-clean" => await Commands.QuietCleanAsync(),
+        "--execute-plan" => await Commands.ExecutePlanAsync(
+            args.Skip(1).FirstOrDefault(a => !a.StartsWith("--")),
+            reportPath: args.SkipWhile(a => a != "--report").Skip(1).FirstOrDefault()),
         "clean" => await Commands.CleanAsync(dryRun: args.Contains("--dry-run")),
         "history" => await Commands.HistoryAsync(),
         "undo" => await Commands.UndoAsync(args.Skip(1).FirstOrDefault()),
@@ -40,6 +46,15 @@ catch (OperationCanceledException)
 {
     Console.WriteLine("Прервано.");
     return 130;
+}
+catch (Exception ex) when (command == "--execute-plan")
+{
+    // Единственная команда, у которой нет ни окна, ни консоли: её запускает
+    // интерфейс с правами администратора и скрытым окном. Всё, что здесь упадёт,
+    // человек увидел бы как «завершился с кодом -532462766» — поэтому причина
+    // уходит в файл отчёта, откуда интерфейс её и покажет.
+    await Commands.ReportFatalAsync(args.SkipWhile(a => a != "--report").Skip(1).FirstOrDefault(), ex);
+    return 90;
 }
 
 namespace Vacate.Cli
@@ -63,6 +78,7 @@ namespace Vacate.Cli
                   vacate extensions        расширения браузеров и их права
                   vacate disk <папка>      куда делось место: крупные файлы, дубли, виды
                   vacate health            состояние дисков
+                  vacate integrity         проверка целостности системных файлов
                   vacate schedule          автоматическая очистка: status | on | off
                   vacate clean --dry-run   полный прогон без единого изменения на диске
                   vacate clean             выполнить очистку
@@ -233,6 +249,192 @@ namespace Vacate.Cli
             await quarantine.PurgeExpiredAsync(CancellationToken.None);
 
             return report.Failed > 0 ? 1 : 0;
+        }
+
+        /// <summary>
+        /// Выполнить готовый план из файла. Служебная команда, вызываемая с правами
+        /// администратора, когда интерфейсу этих прав не хватает.
+        /// </summary>
+        /// <remarks>
+        /// Этот процесс работает с повышенными правами и берёт задание из файла,
+        /// поэтому файл принимается не любой. Ограничения:
+        ///
+        ///   1. Только из временной папки текущего пользователя. Файл в общедоступном
+        ///      каталоге мог бы подменить кто угодно, а выполнялся бы он под администратором.
+        ///   2. Охрана применяется полностью, как и в любом другом запуске: единственный
+        ///      шлюз не имеет режима «доверять вызывающему».
+        ///
+        /// Вывод идёт не на экран, а в файл отчёта: окно этого процесса скрыто,
+        /// и печатать цифры было бы некуда — а интерфейсу нужны настоящие,
+        /// иначе честный счётчик показал бы ноль после каждой операции с повышением.
+        /// </remarks>
+        public static async Task<int> ExecutePlanAsync(string? planPath, string? reportPath)
+        {
+            if (string.IsNullOrWhiteSpace(planPath) || !File.Exists(planPath))
+            {
+                await WriteReportAsync(reportPath, null, "Файл плана не найден");
+                return 2;
+            }
+
+            if (!IsInsideUserTemp(planPath))
+            {
+                // Задание для процесса с правами администратора не может лежать там,
+                // где его способен подменить другой пользователь.
+                await WriteReportAsync(reportPath, null, "Файл плана лежит вне временной папки пользователя");
+                return 3;
+            }
+
+            MutationPlan? plan;
+
+            try
+            {
+                plan = JsonSerializer.Deserialize<MutationPlan>(await File.ReadAllTextAsync(planPath));
+            }
+            catch (Exception ex) when (ex is JsonException or NotSupportedException or IOException or UnauthorizedAccessException)
+            {
+                // Окно этого процесса скрыто: любое необработанное исключение здесь
+                // выглядит для человека как «завершился с непонятным кодом». Поэтому
+                // разбор ошибок широкий — в отчёт должна попасть причина, а не пустота.
+                // Отдельно ловится NotSupportedException: именно им отвечает разбор JSON
+                // на операцию без указания типа, и раньше он ронял процесс целиком.
+                await WriteReportAsync(reportPath, null, $"План не удалось прочитать: {ex.Message}");
+                return 4;
+            }
+
+            if (plan is null || plan.TotalCount == 0)
+            {
+                await WriteReportAsync(reportPath, null, "План пуст");
+                return 5;
+            }
+
+            var (_, policy) = BuildScanner();
+            var quarantine = new FileSystemQuarantine();
+            var journal = new JsonlOperationJournal(Path.Combine(DataDirectory, "journal"));
+            var volumes = new VolumeInfoProvider();
+
+            var executor = new PlanExecutor(
+                new RealEffectSink(quarantine),
+                journal,
+                volumes,
+                new CurrentUserEnvironmentProvider(volumes),
+                GuardSet.Group(policy),
+                GuardSet.Item(),
+                isDryRun: false);
+
+            var report = await executor.ExecuteAsync(plan, null, CancellationToken.None);
+
+            await WriteReportAsync(reportPath, report, null);
+
+            return report.Failed > 0 ? 1 : 0;
+        }
+
+        /// <summary>Лежит ли файл во временной папке текущего пользователя.</summary>
+        private static bool IsInsideUserTemp(string path)
+        {
+            try
+            {
+                var full = Path.GetFullPath(path);
+                var temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
+
+                return full.StartsWith(temp + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Сообщить о сбое, который не удалось обработать по месту.</summary>
+        public static Task ReportFatalAsync(string? reportPath, Exception exception)
+            => WriteReportAsync(reportPath, null, $"Сбой при выполнении плана: {exception.Message}");
+
+        private static async Task WriteReportAsync(string? reportPath, ExecutionReport? report, string? error)
+        {
+            if (string.IsNullOrWhiteSpace(reportPath))
+            {
+                return;
+            }
+
+            try
+            {
+                var payload = new ElevatedRunReport(
+                    Succeeded: report?.Succeeded ?? 0,
+                    Skipped: report?.Skipped ?? 0,
+                    Failed: report?.Failed ?? 0,
+                    Denied: report?.Denied ?? 0,
+                    ClaimedBytes: report?.ClaimedBytes ?? 0,
+                    ActuallyFreedBytes: report?.ActuallyFreedBytes ?? 0,
+                    SessionId: report?.SessionId,
+                    Error: error);
+
+                await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(payload));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Отчёт — удобство, а не условие выполнения. Код возврата всё равно дойдёт.
+            }
+        }
+
+        /// <summary>
+        /// Проверка целостности системных файлов.
+        /// </summary>
+        /// <remarks>
+        /// Окно намеренно остаётся видимым, когда команду запускает интерфейс: проверка
+        /// идёт от десяти минут до сорока, и человек, глядящий всё это время на неподвижную
+        /// надпись, решает, что программа зависла. Штатная проверка печатает проценты сама —
+        /// пусть печатает.
+        ///
+        /// Итог дополнительно уходит в файл, чтобы интерфейс мог показать его словами,
+        /// а не заставлять читать журнал обслуживания.
+        /// </remarks>
+        public static async Task<int> IntegrityAsync(string? reportPath)
+        {
+            if (!SystemIntegrityChecker.IsElevated())
+            {
+                const string Message = "Проверка целостности возможна только с правами администратора.";
+
+                Console.WriteLine(Message);
+                await WriteIntegrityReportAsync(reportPath, IntegrityStatus.NeedsElevation, Message);
+
+                return 2;
+            }
+
+            Console.WriteLine("Проверка целостности системных файлов.");
+            Console.WriteLine("Занимает от 10 до 40 минут. Прервать её нельзя: закрытие этого окна");
+            Console.WriteLine("проверку не остановит, она продолжит работать в фоне.");
+            Console.WriteLine();
+
+            var progress = new Progress<string>(Console.WriteLine);
+            var result = await new SystemIntegrityChecker().RunAsync(progress, CancellationToken.None);
+
+            Console.WriteLine();
+            Console.WriteLine(result.Message);
+
+            await WriteIntegrityReportAsync(reportPath, result.Status, result.Message);
+
+            return result.Status switch
+            {
+                IntegrityStatus.Clean or IntegrityStatus.Repaired => 0,
+                IntegrityStatus.DamageFound => 1,
+                _ => 2,
+            };
+        }
+
+        private static async Task WriteIntegrityReportAsync(string? reportPath, IntegrityStatus status, string message)
+        {
+            if (string.IsNullOrWhiteSpace(reportPath))
+            {
+                return;
+            }
+
+            try
+            {
+                await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new IntegrityReport(status.ToString(), message)));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Отчёт — удобство. Итог уже напечатан в окне.
+            }
         }
 
         public static int Health()

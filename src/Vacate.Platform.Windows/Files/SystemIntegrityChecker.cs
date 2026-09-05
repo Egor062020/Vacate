@@ -162,6 +162,16 @@ public sealed class SystemIntegrityChecker
 /// <param name="RepairedCount">Сколько записей о восстановлении найдено в журнале.</param>
 public sealed record IntegrityCheckResult(IntegrityStatus Status, string Message, int RepairedCount = 0);
 
+/// <summary>
+/// Итог проверки в виде, пригодном для передачи между процессами.
+/// </summary>
+/// <remarks>
+/// Проверка требует прав администратора, а окно программы работает без них, поэтому
+/// её запускает отдельный процесс. Состояние передаётся строкой, а не числом:
+/// файл отчёта переживает обновление программы, а порядок значений в перечислении — нет.
+/// </remarks>
+public sealed record IntegrityReport(string Status, string Message);
+
 public enum IntegrityStatus
 {
     Clean,
