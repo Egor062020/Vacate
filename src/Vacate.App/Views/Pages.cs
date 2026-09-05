@@ -15,10 +15,23 @@ public sealed class AppsPage : ListPage
     {
         Configure(
             "Программы",
-            "Выберите программу в списке и нажмите «Удалить». Среды выполнения помечены отдельно: от них зависят другие программы.",
+            "Выберите программу и нажмите «Удалить». Несколько сразу — с зажатой клавишей Ctrl: тогда они удалятся одна за другой.",
             LoadAsync,
             extraButtonText: "Удалить программу",
             extraAction: UninstallSelectedAsync);
+
+        AllowMultipleSelection();
+
+        // Программу, которой не видно в списке, ищут по её окну: в списке она
+        // называется так, как её назвал издатель, а не так, как написано в окне.
+        AddSecondaryAction("Найти по окну", OpenHunter);
+    }
+
+    private void OpenHunter()
+    {
+        var hunter = new HunterWindow { Owner = Window.GetWindow(this) };
+
+        hunter.ShowDialog();
     }
 
     private static async Task<(IReadOnlyList<ListRow>, string)> LoadAsync(CancellationToken ct)
@@ -39,23 +52,52 @@ public sealed class AppsPage : ListPage
         return (rows, $"Всего {apps.Count}, из них сред выполнения {runtimes}. Размер указан самой программой и часто занижен.");
     }
 
-    /// <summary>Провести выбранную программу через удаление и зачистку следов.</summary>
+    /// <summary>
+    /// Провести выбранные программы через удаление и зачистку следов.
+    /// </summary>
+    /// <remarks>
+    /// Пакет выполняется строго по одной программе за раз, с полным разговором о каждой.
+    /// Соблазн спросить один раз и снести всё скопом велик, но деинсталляторы чужие:
+    /// они задают собственные вопросы, требуют прав, иногда просят перезагрузку. Отвечать
+    /// на них человек может только по одному.
+    /// </remarks>
     private async Task UninstallSelectedAsync()
     {
-        if (Selected?.Payload is not InstalledApp app)
+        var apps = SelectedRows.Select(r => r.Payload).OfType<InstalledApp>().ToList();
+
+        if (apps.Count == 0)
         {
             return;
         }
 
-        var dialog = new UninstallWindow(app)
+        if (apps.Count > 1)
         {
-            Owner = Window.GetWindow(this),
-        };
+            var confirmed = MessageBox.Show(
+                $"Выбрано программ: {apps.Count}.\n\n"
+                + string.Join("\n", apps.Select(a => $"  · {a.DisplayName}"))
+                + "\n\nОни будут удалены по очереди: для каждой откроется своё окно, "
+                + "и каждый деинсталлятор задаст свои вопросы.\n\n"
+                + "Прервать можно в любой момент — отменённые останутся на месте.\n\nПродолжить?",
+                "Удаление нескольких программ",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning);
 
-        dialog.ShowDialog();
+            if (confirmed != MessageBoxResult.OK)
+            {
+                return;
+            }
+        }
 
-        // Список обязательно перечитывается: программы в нём больше может не быть,
-        // и оставить её на экране означало бы показывать неправду.
+        var owner = Window.GetWindow(this);
+
+        foreach (var app in apps)
+        {
+            var dialog = new UninstallWindow(app) { Owner = owner };
+            dialog.ShowDialog();
+        }
+
+        // Список обязательно перечитывается: программ в нём больше может не быть,
+        // и оставить их на экране означало бы показывать неправду.
         await LoadAsync();
     }
 }

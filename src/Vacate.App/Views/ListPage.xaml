@@ -24,6 +24,8 @@
             <Button x:Name="RefreshButton" Style="{StaticResource PrimaryButton}" Content="Обновить" Click="OnRefresh" />
             <Button x:Name="ExtraButton" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0"
                     Visibility="Collapsed" Click="OnExtra" />
+            <Button x:Name="SecondExtraButton" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0"
+                    Visibility="Collapsed" Click="OnSecondExtra" />
             <TextBlock x:Name="StatusText" Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="16,0,0,0" />
         </StackPanel>
 

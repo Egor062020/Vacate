@@ -32,6 +32,7 @@ try
         "integrity" => await Commands.IntegrityAsync(
             reportPath: args.SkipWhile(a => a != "--report").Skip(1).FirstOrDefault()),
         "restore-point" => Commands.CreateRestorePoint(),
+        "watch" => Commands.Watch(args.Skip(1).ToArray()),
         "schedule" => Commands.Schedule(args.Skip(1).ToArray()),
         "--quiet-clean" => await Commands.QuietCleanAsync(),
         "--execute-plan" => await Commands.ExecutePlanAsync(
@@ -85,6 +86,7 @@ namespace Vacate.Cli
                   vacate health            состояние дисков
                   vacate integrity         проверка целостности системных файлов
                   vacate restore-point     создать точку восстановления системы
+                  vacate watch <имя>       снимок системы до установки; watch diff <имя> — что появилось
                   vacate schedule          автоматическая очистка: status | on | off
                   vacate clean --dry-run   полный прогон без единого изменения на диске
                   vacate clean             выполнить очистку
@@ -460,6 +462,138 @@ namespace Vacate.Cli
             {
                 // Отчёт — удобство. Итог уже напечатан в окне.
             }
+        }
+
+        /// <summary>
+        /// Слежение за установкой: снимок до, сравнение после.
+        /// </summary>
+        /// <remarks>
+        /// Снимок «до» надо успеть сделать ДО запуска установщика. Если программа уже
+        /// установлена, сравнивать не с чем, и разница покажет случайный мусор,
+        /// накопившийся за это время, — поэтому команда говорит об этом прямо.
+        /// </remarks>
+        public static int Watch(string[] arguments)
+        {
+            var watcher = new InstallWatcher();
+            var action = arguments.FirstOrDefault()?.ToLowerInvariant();
+
+            if (action == "list")
+            {
+                var saved = watcher.List();
+
+                if (saved.Count == 0)
+                {
+                    Console.WriteLine("Наблюдений нет. Начать: vacate watch <имя>");
+                    return 0;
+                }
+
+                Console.WriteLine("Незакрытые наблюдения:");
+                saved.ToList().ForEach(s => Console.WriteLine($"  {s}"));
+
+                return 0;
+            }
+
+            if (action == "diff")
+            {
+                return Diff(watcher, arguments.Skip(1).FirstOrDefault());
+            }
+
+            if (action == "forget")
+            {
+                var name = arguments.Skip(1).FirstOrDefault();
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    Console.WriteLine("Укажите имя: vacate watch forget <имя>");
+                    return 2;
+                }
+
+                watcher.Forget(name);
+                Console.WriteLine($"Наблюдение «{name}» закрыто.");
+
+                return 0;
+            }
+
+            var label = arguments.FirstOrDefault(a => !a.StartsWith("--"));
+
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                Console.WriteLine("Укажите имя наблюдения: vacate watch <имя>");
+                Console.WriteLine("Потом установите программу и выполните: vacate watch diff <имя>");
+                return 2;
+            }
+
+            Console.WriteLine("Снимаю состояние системы…");
+
+            var path = watcher.Save(watcher.Capture(), label);
+
+            Console.WriteLine($"Снимок сохранён: {path}");
+            Console.WriteLine();
+            Console.WriteLine("Теперь установите программу, а затем выполните:");
+            Console.WriteLine($"  vacate watch diff {label}");
+
+            return 0;
+        }
+
+        private static int Diff(InstallWatcher watcher, string? label)
+        {
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                Console.WriteLine("Укажите имя наблюдения: vacate watch diff <имя>. Список — vacate watch list.");
+                return 2;
+            }
+
+            var before = watcher.Load(label);
+
+            if (before is null)
+            {
+                Console.WriteLine($"Наблюдение «{label}» не найдено.");
+                return 1;
+            }
+
+            Console.WriteLine("Снимаю состояние системы и сравниваю…");
+
+            var difference = watcher.Compare(before, watcher.Capture());
+
+            Console.WriteLine();
+            Console.WriteLine($"С {before.TakenAtUtc.ToLocalTime():dd.MM.yyyy HH:mm} появилось:");
+            Console.WriteLine();
+
+            if (difference.IsEmpty)
+            {
+                Console.WriteLine("  ничего нового");
+                return 0;
+            }
+
+            if (difference.NewApps.Count > 0)
+            {
+                Console.WriteLine($"Записей в списке установленного: {difference.NewApps.Count}");
+                difference.NewApps.ToList().ForEach(a => Console.WriteLine($"  {a}"));
+                Console.WriteLine();
+            }
+
+            if (difference.NewDirectories.Count > 0)
+            {
+                Console.WriteLine($"Каталогов: {difference.NewDirectories.Count}");
+                difference.NewDirectories.ToList().ForEach(d => Console.WriteLine($"  {d}"));
+                Console.WriteLine();
+            }
+
+            if (difference.NewRegistryKeys.Count > 0)
+            {
+                Console.WriteLine($"Ветвей реестра: {difference.NewRegistryKeys.Count}");
+                difference.NewRegistryKeys.ToList().ForEach(k => Console.WriteLine($"  {k}"));
+                Console.WriteLine();
+            }
+
+            // Между снимками работает не только установщик: система обновляется,
+            // браузер пишет кэш, антивирус обновляет базы. Молчать об этом нельзя.
+            Console.WriteLine("В этот список попало всё, что появилось за время наблюдения, — включая");
+            Console.WriteLine("работу системы и других программ. Проверьте пути глазами перед удалением.");
+            Console.WriteLine();
+            Console.WriteLine($"Закончить наблюдение: vacate watch forget {label}");
+
+            return 0;
         }
 
         /// <summary>Создать точку восстановления по прямой просьбе.</summary>
@@ -854,11 +988,24 @@ namespace Vacate.Cli
                 Console.WriteLine();
             }
 
-            if (!app.CanUninstall)
+            // Пока штатный деинсталлятор на месте, идём через него: он знает про свою
+            // программу больше, чем можем узнать мы по косвенным признакам.
+            if (ForcedUninstall.IsApplicable(app))
             {
-                Console.WriteLine("Программа не сообщила системе, как её удалять.");
-                Console.WriteLine("Штатно удалить нечем; можно поискать оставшиеся файлы: vacate leftovers <имя>.");
-                return 1;
+                Console.WriteLine(app.CanUninstall
+                    ? "Деинсталлятор программы не найден: запись пережила саму программу."
+                    : "Программа не сообщила системе, как её удалять.");
+
+                Console.WriteLine("Vacate поищет оставшиеся файлы и уберёт запись из списка установленного.");
+                Console.WriteLine();
+
+                if (!Confirm("Удалить принудительно?", assumeYes))
+                {
+                    Console.WriteLine("Отменено. Ничего не изменилось.");
+                    return 0;
+                }
+
+                return await CleanLeftoversAsync(app, assumeYes, forced: true);
             }
 
             Console.WriteLine("Сейчас запустится деинсталлятор самой программы. Он чужой:");
@@ -899,7 +1046,11 @@ namespace Vacate.Cli
         }
 
         /// <summary>Найти и предложить к удалению то, что деинсталлятор не убрал.</summary>
-        private static async Task<int> CleanLeftoversAsync(InstalledApp app, bool assumeYes)
+        /// <param name="forced">
+        /// Деинсталлятора не было вовсе: запись из списка установленного придётся
+        /// убрать самим, и сделать это надо последним действием.
+        /// </param>
+        private static async Task<int> CleanLeftoversAsync(InstalledApp app, bool assumeYes, bool forced = false)
         {
             Console.WriteLine("Ищу следы…");
 
@@ -907,8 +1058,9 @@ namespace Vacate.Cli
 
             if (found.Count == 0)
             {
-                Console.WriteLine("Следов не осталось.");
-                return 0;
+                Console.WriteLine("Файлов программы не найдено.");
+
+                return forced ? RemoveRegistration(app) : 0;
             }
 
             PrintLeftovers(found);
@@ -992,7 +1144,30 @@ namespace Vacate.Cli
                 Console.WriteLine("Не удалось сохранить копию ветвей: " + string.Join(", ", backup.Failed));
             }
 
+            // Запись из списка убирается ПОСЛЕДНЕЙ: убери её первой — и при сорвавшемся
+            // удалении файлов программа исчезла бы из списка, оставшись на диске.
+            if (forced)
+            {
+                Console.WriteLine();
+                RemoveRegistration(app);
+            }
+
             return report.Failed > 0 ? 1 : 0;
+        }
+
+        /// <summary>Убрать запись программы из списка установленного.</summary>
+        private static int RemoveRegistration(InstalledApp app)
+        {
+            var outcome = new ForcedUninstall().RemoveRegistration(app);
+
+            Console.WriteLine(outcome.Message);
+
+            if (!outcome.Success)
+            {
+                Console.WriteLine("Программа останется в списке установленного.");
+            }
+
+            return outcome.Success ? 0 : 1;
         }
 
         /// <summary>Найти единственную программу по части названия.</summary>

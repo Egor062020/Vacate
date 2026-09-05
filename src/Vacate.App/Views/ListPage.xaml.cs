@@ -33,6 +33,7 @@ public partial class ListPage : UserControl
 {
     private Func<CancellationToken, Task<(IReadOnlyList<ListRow> Rows, string Status)>>? _loader;
     private Func<Task>? _extraAction;
+    private Action? _secondExtraAction;
     private bool _requiresSelection = true;
 
     public ListPage()
@@ -42,6 +43,30 @@ public partial class ListPage : UserControl
 
     /// <summary>Выделенная строка, если раздел позволяет выбирать.</summary>
     protected ListRow? Selected => Items.SelectedItem as ListRow;
+
+    /// <summary>Все выделенные строки. Пригодно там, где действие выполняется пакетом.</summary>
+    protected IReadOnlyList<ListRow> SelectedRows => Items.SelectedItems.OfType<ListRow>().ToList();
+
+    /// <summary>
+    /// Добавить вторую кнопку — для действия, которому не нужна выбранная строка.
+    /// </summary>
+    protected void AddSecondaryAction(string text, Action action)
+    {
+        _secondExtraAction = action;
+
+        SecondExtraButton.Content = text;
+        SecondExtraButton.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Разрешить выделение нескольких строк.
+    /// </summary>
+    /// <remarks>
+    /// Не по умолчанию: там, где действие применяется к одной цели, множественное
+    /// выделение только путает — человек отмечает три строки и не понимает,
+    /// над какой из них сработает кнопка.
+    /// </remarks>
+    protected void AllowMultipleSelection() => Items.SelectionMode = SelectionMode.Extended;
 
     /// <summary>Настроить страницу под конкретный раздел.</summary>
     /// <param name="extraButtonText">Надпись на дополнительной кнопке.</param>
@@ -85,6 +110,8 @@ public partial class ListPage : UserControl
     }
 
     private async void OnRefresh(object sender, RoutedEventArgs e) => await LoadAsync();
+
+    private void OnSecondExtra(object sender, RoutedEventArgs e) => _secondExtraAction?.Invoke();
 
     private async void OnExtra(object sender, RoutedEventArgs e)
     {

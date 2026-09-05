@@ -28,6 +28,9 @@ public partial class UninstallWindow : Window
     private Step _step = Step.Confirm;
     private List<LeftoverRow> _leftovers = [];
 
+    /// <summary>Удаляем без деинсталлятора: его нет, и запись придётся убрать самим.</summary>
+    private bool _forced;
+
     public UninstallWindow(InstalledApp app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -74,10 +77,15 @@ public partial class UninstallWindow : Window
                          + "будет уже не очевидна.");
         }
 
-        if (!_app.CanUninstall)
+        if (ForcedUninstall.IsApplicable(_app))
         {
-            warnings.Add("Программа не сообщила системе, как её удалять. Штатно удалить нечем — "
-                         + "можно только поискать оставшиеся от неё файлы.");
+            // Случай распространённый: программу снесли вручную, а запись осталась.
+            // Штатно удалить нечем, и человек видит её в списке навсегда.
+            warnings.Add(_app.CanUninstall
+                ? "Деинсталлятор программы не найден: запись пережила саму программу. "
+                  + "Vacate поищет оставшиеся файлы и уберёт запись из списка установленного."
+                : "Программа не сообщила системе, как её удалять. Vacate поищет оставшиеся "
+                  + "файлы и уберёт запись из списка установленного.");
         }
 
         if (_app.Scope == InstallScope.Machine)
@@ -91,7 +99,7 @@ public partial class UninstallWindow : Window
             WarningText.Text = string.Join(Environment.NewLine + Environment.NewLine, warnings);
         }
 
-        ActionButton.Content = _app.CanUninstall ? "Удалить программу" : "Поискать следы";
+        ActionButton.Content = ForcedUninstall.IsApplicable(_app) ? "Удалить принудительно" : "Удалить программу";
     }
 
     private async void OnAction(object sender, RoutedEventArgs e)
@@ -121,9 +129,13 @@ public partial class UninstallWindow : Window
 
     private async Task RunUninstallerAsync()
     {
-        if (!_app.CanUninstall)
+        // Пока штатный деинсталлятор на месте, идём через него: он знает про свою
+        // программу больше, чем можем узнать мы по косвенным признакам.
+        if (ForcedUninstall.IsApplicable(_app))
         {
+            _forced = true;
             await SearchLeftoversAsync();
+
             return;
         }
 
@@ -160,9 +172,16 @@ public partial class UninstallWindow : Window
 
         if (found.Count == 0)
         {
-            ShowResult("Готово",
-                (uninstallerMessage is null ? string.Empty : uninstallerMessage + Environment.NewLine + Environment.NewLine)
-                + "Программа удалена, следов не осталось.");
+            var text = (uninstallerMessage is null ? string.Empty : uninstallerMessage + Environment.NewLine + Environment.NewLine)
+                       + "Файлов программы не найдено.";
+
+            // Следов нет, но запись в списке осталась — ради неё всё и затевалось.
+            if (_forced)
+            {
+                text += Environment.NewLine + Environment.NewLine + new ForcedUninstall().RemoveRegistration(_app).Message;
+            }
+
+            ShowResult("Готово", text);
 
             return;
         }
@@ -217,8 +236,26 @@ public partial class UninstallWindow : Window
         BusyText.Text = $"Удаление: {selected.Count} объектов…";
 
         var summary = await ElevatedExecution.RunAsync(plan, dryRun: false);
+        var text = Summarize(summary);
 
-        ShowResult(summary.Succeeded > 0 ? "Готово" : "Ничего не удалено", Summarize(summary));
+        // Запись из списка убирается ПОСЛЕДНЕЙ. Убери её первой — и при сорвавшемся
+        // удалении файлов программа исчезла бы из списка, оставшись на диске:
+        // искать её следы было бы уже не от чего.
+        if (_forced)
+        {
+            var outcome = new ForcedUninstall().RemoveRegistration(_app);
+
+            text += Environment.NewLine + Environment.NewLine + outcome.Message;
+
+            if (!outcome.Success)
+            {
+                text += Environment.NewLine
+                        + "Программа останется в списке установленного. Попробуйте ещё раз "
+                        + "или уберите запись через «Параметры → Приложения».";
+            }
+        }
+
+        ShowResult(summary.Succeeded > 0 || _forced ? "Готово" : "Ничего не удалено", text);
     }
 
     private static string Summarize(RunSummary summary)
