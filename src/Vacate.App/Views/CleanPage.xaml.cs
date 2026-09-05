@@ -91,8 +91,8 @@ public partial class CleanPage : UserControl
                 var executor = new PlanExecutor(
                     sink, journal, volumes,
                     new UiEnvironmentProvider(volumes),
-                    [new EmergencyModeGuard(), new ProtectedPathGuard(BuildPolicy()), new RecycleBinOrderGuard(), new VolumeLimitGuard()],
-                    [new ReparseAndCloudGuard()],
+                    GuardSet.Group(BuildPolicy()),
+                    GuardSet.Item(),
                     dryRun);
 
                 return await executor.ExecuteAsync(_plan, null, CancellationToken.None);
@@ -152,7 +152,8 @@ public partial class CleanPage : UserControl
 
     private static TempFilesScanner BuildScanner() => new(BuildPolicy());
 
-    private static PathPolicy BuildPolicy()
+    /// <summary>Политика путей продукта. Общая для всех разделов, которые что-то удаляют.</summary>
+    internal static PathPolicy BuildPolicy()
     {
         var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         var systemDrive = Path.GetPathRoot(windows) ?? @"C:\";

@@ -28,11 +28,39 @@
         </StackPanel>
 
         <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="18">
-                <ItemsControl x:Name="Items">
-                    <ItemsControl.ItemTemplate>
+            <!--
+                Список выбираемый: в разделе «Программы» по строке выполняется действие,
+                и цель этого действия человек должен видеть выделенной, а не держать в уме.
+            -->
+            <ListBox x:Name="Items" Padding="12" Background="Transparent" BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     HorizontalContentAlignment="Stretch">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="8,4" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="Root" Background="Transparent" CornerRadius="6"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Root" Property="Background" Value="{StaticResource CardHoverBrush}" />
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentDimBrush}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid Margin="0,0,0,14">
+                            <Grid Margin="0,0,0,6">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
@@ -57,9 +85,8 @@
                                            FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
                             </Grid>
                         </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Border>
     </Grid>
 </UserControl>

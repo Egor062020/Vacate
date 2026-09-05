@@ -10,7 +10,17 @@ namespace Vacate.App.Views;
 /// <param name="Value">Величина справа: размер, версия, состояние.</param>
 /// <param name="Badge">Короткая пометка рядом с названием.</param>
 /// <param name="Note">Пояснение под строкой: почему нельзя трогать, чем грозит.</param>
-public sealed record ListRow(string Title, string Subtitle, string Value, string? Badge = null, string? Note = null)
+/// <param name="Payload">
+/// Объект, который строка представляет. Нужен разделам, где по строке выполняется действие:
+/// показать название мало, для удаления требуется сама программа с её командой и путями.
+/// </param>
+public sealed record ListRow(
+    string Title,
+    string Subtitle,
+    string Value,
+    string? Badge = null,
+    string? Note = null,
+    object? Payload = null)
 {
     public Visibility BadgeVisibility => string.IsNullOrEmpty(Badge) ? Visibility.Collapsed : Visibility.Visible;
     public Visibility NoteVisibility => string.IsNullOrEmpty(Note) ? Visibility.Collapsed : Visibility.Visible;
@@ -22,20 +32,28 @@ public sealed record ListRow(string Title, string Subtitle, string Value, string
 public partial class ListPage : UserControl
 {
     private Func<CancellationToken, Task<(IReadOnlyList<ListRow> Rows, string Status)>>? _loader;
-    private Action? _extraAction;
+    private Func<Task>? _extraAction;
 
     public ListPage()
     {
         InitializeComponent();
     }
 
+    /// <summary>Выделенная строка, если раздел позволяет выбирать.</summary>
+    protected ListRow? Selected => Items.SelectedItem as ListRow;
+
     /// <summary>Настроить страницу под конкретный раздел.</summary>
+    /// <param name="extraButtonText">
+    /// Надпись на дополнительной кнопке. Кнопка остаётся недоступной, пока строка
+    /// не выбрана: действие без выбранной цели выполнить не над чем, и предложение
+    /// нажать её раньше времени было бы обманом.
+    /// </param>
     protected void Configure(
         string title,
         string subtitle,
         Func<CancellationToken, Task<(IReadOnlyList<ListRow> Rows, string Status)>> loader,
         string? extraButtonText = null,
-        Action? extraAction = null)
+        Func<Task>? extraAction = null)
     {
         TitleText.Text = title;
         SubtitleText.Text = subtitle;
@@ -46,6 +64,9 @@ public partial class ListPage : UserControl
         {
             ExtraButton.Content = extraButtonText;
             ExtraButton.Visibility = Visibility.Visible;
+            ExtraButton.IsEnabled = false;
+
+            Items.SelectionChanged += (_, _) => ExtraButton.IsEnabled = Selected is not null;
         }
 
         Loaded += async (_, _) =>
@@ -59,7 +80,26 @@ public partial class ListPage : UserControl
 
     private async void OnRefresh(object sender, RoutedEventArgs e) => await LoadAsync();
 
-    private void OnExtra(object sender, RoutedEventArgs e) => _extraAction?.Invoke();
+    private async void OnExtra(object sender, RoutedEventArgs e)
+    {
+        if (_extraAction is null)
+        {
+            return;
+        }
+
+        // Кнопка выключается на время работы: повторное нажатие запустило бы
+        // вторую попытку удаления той же программы поверх первой.
+        ExtraButton.IsEnabled = false;
+
+        try
+        {
+            await _extraAction();
+        }
+        finally
+        {
+            ExtraButton.IsEnabled = Selected is not null;
+        }
+    }
 
     protected async Task LoadAsync()
     {

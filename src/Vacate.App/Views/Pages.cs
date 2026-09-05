@@ -1,4 +1,5 @@
 using System.IO;
+using System.Windows;
 using Vacate.Abstractions.Model;
 using Vacate.Platform.Windows.Files;
 using Vacate.Platform.Windows.Registry;
@@ -12,8 +13,10 @@ public sealed class AppsPage : ListPage
     {
         Configure(
             "Программы",
-            "Установленное на этом компьютере. Среды выполнения показаны отдельно: от них зависят другие программы.",
-            LoadAsync);
+            "Выберите программу в списке и нажмите «Удалить». Среды выполнения помечены отдельно: от них зависят другие программы.",
+            LoadAsync,
+            extraButtonText: "Удалить программу",
+            extraAction: UninstallSelectedAsync);
     }
 
     private static async Task<(IReadOnlyList<ListRow>, string)> LoadAsync(CancellationToken ct)
@@ -25,12 +28,33 @@ public sealed class AppsPage : ListPage
             Subtitle: app.Publisher ?? string.Empty,
             Value: app.EstimatedSizeBytes > 0 ? Format.Size(app.EstimatedSizeBytes) : "размер неизвестен",
             Badge: app.LooksLikeRuntime ? "нужна другим" : app.Scope == InstallScope.User ? "только для вас" : null,
-            Note: app.CanUninstall ? null : "Программа не сообщила системе, как её удалять"))
+            Note: app.CanUninstall ? null : "Программа не сообщила системе, как её удалять",
+            Payload: app))
             .ToList();
 
         var runtimes = apps.Count(a => a.LooksLikeRuntime);
 
         return (rows, $"Всего {apps.Count}, из них сред выполнения {runtimes}. Размер указан самой программой и часто занижен.");
+    }
+
+    /// <summary>Провести выбранную программу через удаление и зачистку следов.</summary>
+    private async Task UninstallSelectedAsync()
+    {
+        if (Selected?.Payload is not InstalledApp app)
+        {
+            return;
+        }
+
+        var dialog = new UninstallWindow(app)
+        {
+            Owner = Window.GetWindow(this),
+        };
+
+        dialog.ShowDialog();
+
+        // Список обязательно перечитывается: программы в нём больше может не быть,
+        // и оставить её на экране означало бы показывать неправду.
+        await LoadAsync();
     }
 }
 

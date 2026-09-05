@@ -130,8 +130,15 @@ if (-not $iscc) {
 
 if ($LASTEXITCODE -ne 0) { throw "Сборка установщика не удалась" }
 
-$setup = Get-ChildItem $dist -Filter "*setup.exe" | Select-Object -First 1
-Write-Host "  установщик: $($setup.FullName)" -ForegroundColor Green
+# Ищем установщик именно этой версии, а не первый попавшийся: раньше сюда попадал
+# файл прошлой сборки, и вывод рапортовал об успехе, показывая чужой номер версии.
+$setupPath = Join-Path $dist "Vacate-$Version-setup.exe"
+
+if (-not (Test-Path $setupPath)) {
+    throw "Установщик Vacate-$Version-setup.exe не создан. Проверьте, что версия дошла до Vacate.iss."
+}
+
+Write-Host "  установщик: $setupPath" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Готово. Файлы поставки в $dist" -ForegroundColor Cyan

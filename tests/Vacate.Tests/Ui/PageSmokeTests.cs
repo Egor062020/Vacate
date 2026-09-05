@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Vacate.Abstractions.Model;
 using Vacate.App.Views;
 using Xunit;
 
@@ -103,6 +104,60 @@ public sealed class PageSmokeTests
         {
             var window = new App.MainWindow();
             Assert.NotNull(window);
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void Окно_удаления_программы_создаётся_и_показывает_предупреждение()
+    {
+        RunOnUiThread(() =>
+        {
+            // Компонент, нужный другим программам: окно обязано сказать об этом
+            // до нажатия, а не после того, как половина программ перестанет запускаться.
+            var runtime = new InstalledApp(
+                Id: "{test}",
+                DisplayName: "Microsoft Visual C++ 2015 Redistributable",
+                Version: "14.0",
+                Publisher: "Microsoft Corporation",
+                InstallLocation: null,
+                UninstallCommand: "uninstall.exe",
+                QuietUninstallCommand: null,
+                InstallDate: null,
+                EstimatedSizeBytes: 0,
+                Scope: InstallScope.Machine,
+                Is32BitOnWin64: false,
+                IconPath: null);
+
+            var window = new UninstallWindow(runtime);
+
+            Assert.True(runtime.LooksLikeRuntime);
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void Окно_удаления_создаётся_для_программы_без_команды_удаления()
+    {
+        RunOnUiThread(() =>
+        {
+            var orphan = new InstalledApp(
+                Id: "{test}",
+                DisplayName: "Zzqxwv Orphan",
+                Version: null,
+                Publisher: null,
+                InstallLocation: null,
+                UninstallCommand: null,
+                QuietUninstallCommand: null,
+                InstallDate: null,
+                EstimatedSizeBytes: 0,
+                Scope: InstallScope.User,
+                Is32BitOnWin64: false,
+                IconPath: null);
+
+            var window = new UninstallWindow(orphan);
+
+            Assert.False(orphan.CanUninstall);
             window.Close();
         });
     }

@@ -4,6 +4,31 @@ using Vacate.Abstractions.Safety;
 namespace Vacate.Core.Safety;
 
 /// <summary>
+/// Полный набор охраны. Единственное место, где перечислены все проверки.
+/// </summary>
+/// <remarks>
+/// Раньше список повторялся в каждом месте сборки исполнителя. Пока проверок было
+/// четыре и модулей два, это выглядело безобидно — а на деле означало, что новая
+/// проверка защищает ровно те вызовы, где её не забыли дописать. Забыть в одном
+/// из четырёх мест достаточно, чтобы дыра выглядела закрытой и не была.
+/// </remarks>
+public static class GuardSet
+{
+    /// <summary>Дешёвая охрана уровня группы.</summary>
+    public static IReadOnlyList<IGroupGuard> Group(PathPolicy policy) =>
+    [
+        new EmergencyModeGuard(),
+        new ProtectedPathGuard(policy),
+        new ProtectedRegistryGuard(),
+        new RecycleBinOrderGuard(),
+        new VolumeLimitGuard(),
+    ];
+
+    /// <summary>Дорогая охрана уровня объекта: применяется только к жёлтому и красному.</summary>
+    public static IReadOnlyList<IItemGuard> Item() => [new ReparseAndCloudGuard()];
+}
+
+/// <summary>
 /// Проверка защищённых путей. Дешёвая, работает на уровне группы.
 /// </summary>
 public sealed class ProtectedPathGuard(PathPolicy policy) : IGroupGuard
@@ -44,6 +69,101 @@ public sealed class ProtectedPathGuard(PathPolicy policy) : IGroupGuard
         return caution
             ? GuardVerdict.Raise(RiskLevel.Yellow, LocalizedText.FromResource("Guard.ProtectedPath.Caution", cautionReason ?? string.Empty))
             : GuardVerdict.Allow();
+    }
+}
+
+/// <summary>
+/// Защита критичных ветвей реестра. Дешёвая, работает на уровне группы.
+/// </summary>
+/// <remarks>
+/// Появилась вместе с удалением остатков программ и закрывает несимметричность,
+/// которую раньше не было видно: пути файлов проверял <see cref="ProtectedPathGuard"/>,
+/// а ветки реестра не проверял никто. Пока единственным источником таких операций был
+/// поиск остатков со своим списком исключений, это сходило с рук — но шлюз, полагающийся
+/// на добросовестность вызывающего, шлюзом не является. Достаточно одного нового модуля,
+/// который забудет про исключения, чтобы снести ветку, ломающую вход в систему.
+///
+/// Проверка идёт посегментно, а не по префиксу строки: иначе «SOFTWARE\MicrosoftEdgeBackup»
+/// считался бы находящимся внутри «SOFTWARE\Microsoft».
+/// </remarks>
+public sealed class ProtectedRegistryGuard : IGroupGuard
+{
+    /// <summary>Ветви, удаление которых не может иметь законной причины.</summary>
+    private static readonly string[] Protected =
+    [
+        @"SOFTWARE\Microsoft",
+        @"SOFTWARE\Classes",
+        @"SOFTWARE\Policies",
+        @"SOFTWARE\WOW6432Node\Microsoft",
+        @"SOFTWARE\Windows",
+        "SYSTEM",
+        "SECURITY",
+        "SAM",
+        "HARDWARE",
+        "BCD00000000",
+    ];
+
+    /// <summary>
+    /// Узлы, которые нельзя удалять целиком, но внутрь которых ходить можно.
+    /// </summary>
+    private static readonly string[] NeverWholeKey =
+    [
+        "SOFTWARE",
+        @"SOFTWARE\WOW6432Node",
+        "Software",
+    ];
+
+    public int Order => 12;
+    public GuardScope Scope => GuardScope.Group;
+    public string Name => "Защищённые ветви реестра";
+
+    public GuardVerdict Evaluate(OperationGroup group, GuardEnvironment environment)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+
+        foreach (var operation in group.Operations)
+        {
+            var target = operation switch
+            {
+                DeleteRegistryOperation delete => delete.Target,
+                _ => null,
+            };
+
+            if (target is null)
+            {
+                continue;
+            }
+
+            var path = target.SubKeyPath.Trim('\\');
+
+            if (string.IsNullOrEmpty(path))
+            {
+                return GuardVerdict.Deny(LocalizedText.FromResource("Guard.Registry.WholeHive"));
+            }
+
+            if (NeverWholeKey.Any(k => string.Equals(path, k, StringComparison.OrdinalIgnoreCase)))
+            {
+                return GuardVerdict.Deny(LocalizedText.FromResource("Guard.Registry.WholeKey", path));
+            }
+
+            if (Protected.Any(p => IsSameOrInside(path, p)))
+            {
+                return GuardVerdict.Deny(LocalizedText.FromResource("Guard.Registry.Protected", path));
+            }
+        }
+
+        return GuardVerdict.Allow();
+    }
+
+    /// <summary>Лежит ли ключ внутри другого или совпадает с ним. Сравнение посегментное.</summary>
+    internal static bool IsSameOrInside(string path, string container)
+    {
+        if (string.Equals(path, container, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return path.StartsWith(container + '\\', StringComparison.OrdinalIgnoreCase);
     }
 }
 

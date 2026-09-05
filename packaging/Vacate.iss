@@ -12,7 +12,14 @@
 ; каталог — тот самый, который программа чистит.
 
 #define AppName "Vacate"
-#define AppVersion "1.0.0"
+
+; Версия приходит из скрипта сборки ключом /DAppVersion. Безусловный #define
+; молча перекрывал переданное значение: сборка объявляла версию 1.1.0, а установщик
+; получался с номером 1.0.0 — и это выяснилось только по имени готового файла.
+#ifndef AppVersion
+  #define AppVersion "0.0.0-dev"
+#endif
+
 #define AppPublisher "Egor062020"
 #define AppUrl "https://github.com/Egor062020/Vacate"
 #define AppExeName "Vacate.exe"

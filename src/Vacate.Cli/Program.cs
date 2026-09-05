@@ -20,6 +20,10 @@ try
         "scan" => await Commands.ScanAsync(),
         "apps" => Commands.Apps(showRuntimes: args.Contains("--all")),
         "leftovers" => Commands.Leftovers(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
+        "uninstall" => await Commands.UninstallAsync(
+            args.Skip(1).FirstOrDefault(a => !a.StartsWith("--")),
+            silent: args.Contains("--silent"),
+            assumeYes: args.Contains("--yes")),
         "startup" => Commands.Startup(showAll: args.Contains("--all")),
         "extensions" => Commands.Extensions(),
         "disk" => Commands.Disk(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
@@ -53,6 +57,7 @@ namespace Vacate.Cli
 
                   vacate scan              показать, что найдено, ничего не меняя
                   vacate apps              установленные программы (--all: со средами выполнения)
+                  vacate uninstall <имя>   удалить программу и убрать её следы
                   vacate leftovers <имя>   найти следы программы, ничего не удаляя
                   vacate startup           что стартует вместе с Windows (--all: и службы)
                   vacate extensions        расширения браузеров и их права
@@ -217,8 +222,8 @@ namespace Vacate.Cli
                 journal,
                 volumes,
                 new CurrentUserEnvironmentProvider(volumes),
-                [new EmergencyModeGuard(), new ProtectedPathGuard(policy), new RecycleBinOrderGuard(), new VolumeLimitGuard()],
-                [new ReparseAndCloudGuard()],
+                GuardSet.Group(policy),
+                GuardSet.Item(),
                 isDryRun: false);
 
             var report = await executor.ExecuteAsync(plan, null, CancellationToken.None);
@@ -472,33 +477,14 @@ namespace Vacate.Cli
 
         public static int Leftovers(string? query)
         {
-            if (string.IsNullOrWhiteSpace(query))
+            var app = ResolveApp(query, "vacate leftovers <часть названия>");
+
+            if (app is null)
             {
-                Console.WriteLine("Укажите программу: vacate leftovers <часть названия>. Список — vacate apps.");
                 return 2;
             }
 
-            var apps = new InstalledAppsScanner().Scan();
-            var matches = apps
-                .Where(a => a.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            if (matches.Count == 0)
-            {
-                Console.WriteLine($"Программа с названием «{query}» не найдена.");
-                return 1;
-            }
-
-            if (matches.Count > 1)
-            {
-                Console.WriteLine("Подходит несколько программ, уточните запрос:");
-                matches.ForEach(a => Console.WriteLine($"  {a.DisplayName}"));
-                return 2;
-            }
-
-            var app = matches[0];
             Console.WriteLine($"Следы программы «{app.DisplayName}»");
-            Console.WriteLine();
 
             var found = new LeftoverScanner().Scan(app);
 
@@ -507,6 +493,210 @@ namespace Vacate.Cli
                 Console.WriteLine("Ничего не найдено — программа не оставила заметных следов.");
                 return 0;
             }
+
+            PrintLeftovers(found);
+
+            Console.WriteLine("Ничего не удалено: это только показ.");
+            // Имя в кавычках: почти все названия многословны, и подсказка без кавычек
+            // отправила бы человека в ошибку «подходит несколько программ».
+            Console.WriteLine($"Удалить программу вместе со следами: vacate uninstall \"{app.DisplayName}\"");
+            return 0;
+        }
+
+        /// <summary>
+        /// Удаление программы: штатный деинсталлятор, затем зачистка следов.
+        /// </summary>
+        /// <remarks>
+        /// Порядок именно такой и другим быть не может. Пока программа установлена,
+        /// её каталог — не остаток, а рабочие файлы: удалив их первыми, мы оставили бы
+        /// систему с записью в реестре, ведущей на исчезнувший деинсталлятор,
+        /// то есть с программой, которую больше нечем удалить.
+        ///
+        /// Между шагами обязательно подтверждение. Оно не формальность: деинсталлятор
+        /// чужой, и что именно он снесёт, мы не знаем до его запуска.
+        /// </remarks>
+        public static async Task<int> UninstallAsync(string? query, bool silent, bool assumeYes)
+        {
+            var app = ResolveApp(query, "vacate uninstall <часть названия>");
+
+            if (app is null)
+            {
+                return 2;
+            }
+
+            Console.WriteLine($"Программа:  {app.DisplayName}");
+            Console.WriteLine($"Издатель:   {app.Publisher ?? "не указан"}");
+            Console.WriteLine($"Версия:     {app.Version ?? "не указана"}");
+            Console.WriteLine($"Каталог:    {app.InstallLocation ?? "не указан"}");
+            Console.WriteLine();
+
+            if (app.LooksLikeRuntime)
+            {
+                // Не запрет, а честное предупреждение: удалять компоненты иногда нужно,
+                // но человек должен знать, что ломает не одну программу.
+                Console.WriteLine("ВНИМАНИЕ: похоже на компонент, нужный другим программам.");
+                Console.WriteLine("После его удаления программы, которые на него опираются, перестанут запускаться.");
+                Console.WriteLine();
+            }
+
+            if (!app.CanUninstall)
+            {
+                Console.WriteLine("Программа не сообщила системе, как её удалять.");
+                Console.WriteLine("Штатно удалить нечем; можно поискать оставшиеся файлы: vacate leftovers <имя>.");
+                return 1;
+            }
+
+            Console.WriteLine("Сейчас запустится деинсталлятор самой программы. Он чужой:");
+            Console.WriteLine("что именно он удалит и о чём спросит, зависит от него, а не от Vacate.");
+            Console.WriteLine();
+
+            if (!Confirm("Запустить удаление?", assumeYes))
+            {
+                Console.WriteLine("Отменено. Ничего не изменилось.");
+                return 0;
+            }
+
+            Console.WriteLine("Жду завершения деинсталлятора…");
+
+            var outcome = await new UninstallRunner()
+                .RunAsync(app, silent, TimeSpan.FromMinutes(30), CancellationToken.None);
+
+            Console.WriteLine();
+
+            if (outcome.Message is not null)
+            {
+                Console.WriteLine(outcome.Message);
+            }
+
+            if (outcome.Status is UninstallStatus.Failed or UninstallStatus.TimedOut)
+            {
+                Console.WriteLine("Следы не ищем: программа, возможно, осталась на месте.");
+                return 1;
+            }
+
+            if (outcome.Status == UninstallStatus.Completed && outcome.Message is null)
+            {
+                Console.WriteLine("Деинсталлятор отработал.");
+            }
+
+            Console.WriteLine();
+            return await CleanLeftoversAsync(app, assumeYes);
+        }
+
+        /// <summary>Найти и предложить к удалению то, что деинсталлятор не убрал.</summary>
+        private static async Task<int> CleanLeftoversAsync(InstalledApp app, bool assumeYes)
+        {
+            Console.WriteLine("Ищу следы…");
+
+            var found = new LeftoverScanner().Scan(app);
+
+            if (found.Count == 0)
+            {
+                Console.WriteLine("Следов не осталось.");
+                return 0;
+            }
+
+            PrintLeftovers(found);
+
+            // Уровень «возможно» не отмечается никогда автоматически: за ним стоит
+            // одно совпадение части имени, и ошибка стоит чужого каталога с данными.
+            var proposed = found.Where(f => f.Confidence != LeftoverConfidence.Possible).ToList();
+            var uncertain = found.Count - proposed.Count;
+
+            if (proposed.Count == 0)
+            {
+                Console.WriteLine("К удалению ничего не предлагается: всё найденное — только возможные совпадения.");
+                Console.WriteLine("Проверьте пути выше сами и удалите вручную, если это действительно следы программы.");
+                return 0;
+            }
+
+            var size = proposed.Sum(p => p.SizeOnDiskBytes);
+
+            Console.WriteLine($"К удалению предлагается: {proposed.Count} объектов, {Format(size)}.");
+
+            if (uncertain > 0)
+            {
+                Console.WriteLine($"Ещё {uncertain} возможных совпадений НЕ предлагается — проверьте их сами.");
+            }
+
+            Console.WriteLine("Каталоги уйдут в карантин и вернутся командой отката. Ветки реестра — без карантина.");
+            Console.WriteLine();
+
+            if (!Confirm("Удалить предложенное?", assumeYes))
+            {
+                Console.WriteLine("Отменено. Ничего не изменилось.");
+                return 0;
+            }
+
+            var plan = new LeftoverPlanBuilder().Build(app, proposed);
+
+            if (plan.TotalCount == 0)
+            {
+                Console.WriteLine("Удалять нечего: объекты исчезли, пока вы читали список.");
+                return 0;
+            }
+
+            var (_, policy) = BuildScanner();
+            var quarantine = new FileSystemQuarantine();
+            var journal = new JsonlOperationJournal(Path.Combine(DataDirectory, "journal"));
+            var volumes = new VolumeInfoProvider();
+
+            var executor = new PlanExecutor(
+                new RealEffectSink(quarantine),
+                journal,
+                volumes,
+                new CurrentUserEnvironmentProvider(volumes),
+                GuardSet.Group(policy),
+                GuardSet.Item(),
+                isDryRun: false);
+
+            var report = await executor.ExecuteAsync(plan, null, CancellationToken.None);
+
+            Console.WriteLine();
+            PrintReport(report);
+
+            if (report.Succeeded > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Вернуть удалённое: vacate undo {report.SessionId}");
+            }
+
+            return report.Failed > 0 ? 1 : 0;
+        }
+
+        /// <summary>Найти единственную программу по части названия.</summary>
+        private static InstalledApp? ResolveApp(string? query, string usage)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                Console.WriteLine($"Укажите программу: {usage}. Список — vacate apps.");
+                return null;
+            }
+
+            var matches = new InstalledAppsScanner().Scan()
+                .Where(a => a.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            switch (matches.Count)
+            {
+                case 0:
+                    Console.WriteLine($"Программа с названием «{query}» не найдена.");
+                    return null;
+
+                case 1:
+                    return matches[0];
+
+                default:
+                    // Угадывать нельзя: удалили бы не то, что имел в виду человек.
+                    Console.WriteLine("Подходит несколько программ, уточните запрос:");
+                    matches.ForEach(a => Console.WriteLine($"  {a.DisplayName}"));
+                    return null;
+            }
+        }
+
+        private static void PrintLeftovers(IReadOnlyList<LeftoverItem> found)
+        {
+            Console.WriteLine();
 
             // Порядок важен: сначала то, в чём мы уверены, в конце — спорное,
             // которое по умолчанию не отмечается к удалению.
@@ -523,9 +713,34 @@ namespace Vacate.Cli
 
                 Console.WriteLine();
             }
+        }
 
-            Console.WriteLine("Ничего не удалено: это только показ. Удаление появится вместе с интерфейсом.");
-            return 0;
+        /// <summary>
+        /// Спросить подтверждение.
+        /// </summary>
+        /// <remarks>
+        /// Ответом считается только явное «да». Нажатый Enter, пустая строка и любое
+        /// невнятное слово означают отказ: цена ошибочного согласия здесь — чужие файлы.
+        /// </remarks>
+        private static bool Confirm(string question, bool assumeYes)
+        {
+            if (assumeYes)
+            {
+                Console.WriteLine($"{question} да (ключ --yes)");
+                return true;
+            }
+
+            if (Console.IsInputRedirected)
+            {
+                // Спросить некого: команду запустили из сценария без ключа согласия.
+                Console.WriteLine($"{question} нет — ввод недоступен. Для запуска из сценария добавьте --yes.");
+                return false;
+            }
+
+            Console.Write($"{question} [да/нет] ");
+            var answer = Console.ReadLine()?.Trim().ToLowerInvariant();
+
+            return answer is "да" or "yes" or "y" or "д";
         }
 
         private static string DescribeConfidence(LeftoverConfidence confidence) => confidence switch
@@ -574,8 +789,8 @@ namespace Vacate.Cli
                 journal,
                 volumes,
                 new CurrentUserEnvironmentProvider(volumes),
-                [new EmergencyModeGuard(), new ProtectedPathGuard(policy), new RecycleBinOrderGuard(), new VolumeLimitGuard()],
-                [new ReparseAndCloudGuard()],
+                GuardSet.Group(policy),
+                GuardSet.Item(),
                 dryRun);
 
             using var cts = new CancellationTokenSource();
@@ -728,12 +943,22 @@ namespace Vacate.Cli
             _ => kind.ToString(),
         };
 
-        private static string Describe(LocalizedText text) => text.ResourceKey switch
+        private static string Describe(LocalizedText text)
         {
-            "Clean.Temp.User" => "Временные файлы пользователя",
-            "Clean.Temp.System" => "Временные файлы системы",
-            _ => text.ResourceKey ?? "—",
-        };
+            // Тексты, встроенные в сборку, приходят ключом; тексты, собранные под конкретную
+            // программу («Следы FreeCAD»), ключа иметь не могут и несут переводы с собой.
+            if (text.Translations is { } translations)
+            {
+                return translations.TryGetValue("ru", out var russian) ? russian : translations.Values.First();
+            }
+
+            return text.ResourceKey switch
+            {
+                "Clean.Temp.User" => "Временные файлы пользователя",
+                "Clean.Temp.System" => "Временные файлы системы",
+                _ => text.ResourceKey ?? "—",
+            };
+        }
 
         /// <summary>
         /// Единицы двоичные, как в проводнике Windows.
