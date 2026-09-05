@@ -40,9 +40,18 @@ foreach ($path in @($publish, $dist)) {
 
 New-Item -ItemType Directory -Force -Path $appOut | Out-Null
 
+# ПОРЯДОК ВАЖЕН: графическое приложение публикуется ПОСЛЕДНИМ.
+#
+# Консольный проект не использует графическую подсистему, но в его публикацию всё равно
+# попадают файлы с теми же именами, что у настоящих библиотек графики, — пустые заглушки
+# для совместимости. При копировании поверх они затирают настоящие библиотеки, и
+# приложение падает при запуске с сообщением «не удаётся найти WindowsBase».
+#
+# Найдено установкой собранной поставки и попыткой её запустить: настоящая библиотека
+# весит два мегабайта, заглушка — шестнадцать килобайт.
 $projects = @(
-    @{ Name = "Vacate.App"; Path = "src\Vacate.App\Vacate.App.csproj" },
-    @{ Name = "Vacate.Cli"; Path = "src\Vacate.Cli\Vacate.Cli.csproj" }
+    @{ Name = "Vacate.Cli"; Path = "src\Vacate.Cli\Vacate.Cli.csproj" },
+    @{ Name = "Vacate.App"; Path = "src\Vacate.App\Vacate.App.csproj" }
 )
 
 foreach ($project in $projects) {
@@ -69,6 +78,26 @@ Write-Host "  собрано: $($executables -join ', ')"
 
 if ($executables -notcontains "Vacate.exe" -or $executables -notcontains "vacate-cli.exe") {
     throw "В поставке не хватает исполняемых файлов"
+}
+
+# Проверка от повторения найденной ошибки: если библиотека графики окажется
+# заглушкой, приложение соберётся и установится, но упадёт при первом запуске
+# у пользователя. Такое нельзя выпускать.
+if ($SelfContained) {
+    $wpfCore = Join-Path $appOut "WindowsBase.dll"
+
+    if (-not (Test-Path $wpfCore)) {
+        throw "В поставке нет WindowsBase.dll — графическое приложение не запустится"
+    }
+
+    $size = (Get-Item $wpfCore).Length
+
+    if ($size -lt 1MB) {
+        throw "WindowsBase.dll размером $size байт — это заглушка, а не настоящая библиотека. " +
+              "Проверьте порядок публикации: графическое приложение должно идти последним"
+    }
+
+    Write-Host "  проверка библиотек графики пройдена"
 }
 
 New-Item -ItemType Directory -Force -Path $dist | Out-Null

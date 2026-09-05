@@ -5,6 +5,7 @@
     <RootNamespace>Vacate.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +18,15 @@
     <ProjectReference Include="..\..\src\Vacate.Abstractions\Vacate.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Vacate.Core\Vacate.Core.csproj" />
     <ProjectReference Include="..\..\src\Vacate.Platform.Windows\Vacate.Platform.Windows.csproj" />
+    <ProjectReference Include="..\..\src\Vacate.App\Vacate.App.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Поддержка интерфейса меняет набор неявных подключений, и System.IO из него
+      выпадает. Подключаем явно: тесты работают с настоящими файлами повсеместно.
+    -->
+    <Using Include="System.IO" />
   </ItemGroup>
 
 </Project>
