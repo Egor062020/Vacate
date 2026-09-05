@@ -3,7 +3,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using Vacate.Abstractions.Model;
-using Vacate.App.Localization;
+using Vacate.Core.Localization;
 using Vacate.Platform.Windows.Files;
 using Vacate.Platform.Windows.Registry;
 

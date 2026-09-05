@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using Vacate.Abstractions.Execution;
 using Vacate.Abstractions.Model;
-using Vacate.App.Localization;
+using Vacate.Core.Localization;
 using Vacate.Core.Execution;
 using Vacate.Core.Journal;
 using Vacate.Core.Safety;

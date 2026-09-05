@@ -143,7 +143,7 @@ internal sealed record RunSummary(
             // человек должен понимать, что цифры не дошли, а не думать,
             // что работа была впустую.
             Error: outcome.Success
-                ? report is null ? Localization.Strings.Get("Elevated.NoReport") : null
+                ? report is null ? Vacate.Core.Localization.Strings.Get("Elevated.NoReport") : null
                 : outcome.Message,
 
             // Разбор расхождения через границу процессов не передаётся:

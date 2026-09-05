@@ -1,5 +1,5 @@
 using System.Globalization;
-using Vacate.App.Localization;
+using Vacate.Core.Localization;
 
 namespace Vacate.App.Views;
 

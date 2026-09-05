@@ -6,11 +6,16 @@ using Vacate.Abstractions.Safety;
 using Vacate.Cli;
 using Vacate.Core.Execution;
 using Vacate.Core.Journal;
+using Vacate.Core.Localization;
 using Vacate.Core.Safety;
 using Vacate.Platform.Windows.Files;
 using Vacate.Platform.Windows.Registry;
 
 Console.OutputEncoding = Encoding.UTF8;
+
+// Язык берётся из той же настройки, что и в окне программы: два инструмента
+// одного продукта, говорящие на разных языках, выглядят как чужие друг другу.
+Strings.Use(AppSettings.Load().Language);
 
 var command = args.Length > 0 ? args[0].ToLowerInvariant() : "help";
 
@@ -49,7 +54,7 @@ try
 }
 catch (OperationCanceledException)
 {
-    Console.WriteLine("Прервано.");
+    Console.WriteLine(Strings.Get("Cli.Interrupted"));
     return 130;
 }
 catch (Exception ex) when (command == "--execute-plan")
@@ -67,35 +72,19 @@ namespace Vacate.Cli
     /// <summary>Команды консольной оболочки.</summary>
     internal static class Commands
     {
+        /// <summary>Короткое имя для перевода: в этом файле оно встречается сотни раз.</summary>
+        private static string S(string key) => Strings.Get(key);
+
+        /// <summary>Переведённый текст с подстановками.</summary>
+        private static string S(string key, params object?[] args) =>
+            string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Get(key), args);
+
         private static string DataDirectory =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vacate");
 
         public static int Help()
         {
-            Console.WriteLine("""
-                Vacate — очистка и обслуживание Windows.
-
-                  vacate scan              показать, что найдено, ничего не меняя
-                  vacate apps              установленные программы (--all: со средами выполнения)
-                  vacate uninstall <имя>   удалить программу и убрать её следы
-                  vacate leftovers <имя>   найти следы программы, ничего не удаляя
-                  vacate startup           что стартует вместе с Windows (--all: и службы)
-                  vacate startup off <id>  отключить автозапуск (on — включить обратно)
-                  vacate extensions        расширения браузеров и их права
-                  vacate disk <папка>      куда делось место: крупные файлы, дубли, виды
-                  vacate health            состояние дисков
-                  vacate integrity         проверка целостности системных файлов
-                  vacate restore-point     создать точку восстановления системы
-                  vacate watch <имя>       снимок системы до установки; watch diff <имя> — что появилось
-                  vacate schedule          автоматическая очистка: status | on | off
-                  vacate clean --dry-run   полный прогон без единого изменения на диске
-                  vacate clean             выполнить очистку
-                  vacate history           последние сеансы
-                  vacate undo <сеанс>      вернуть то, что можно вернуть
-
-                Временные файлы моложе суток не трогаются: их может использовать
-                работающая программа.
-                """);
+            Console.WriteLine(S("Cli.Help"));
 
             return 0;
         }
@@ -107,20 +96,20 @@ namespace Vacate.Cli
 
             if (plan.TotalCount == 0)
             {
-                Console.WriteLine("Чисто. Мусор накапливается примерно за неделю, загляните позже.");
+                Console.WriteLine(S("Cli.Clean"));
                 return 0;
             }
 
-            Console.WriteLine($"Найдено: {plan.TotalCount} объектов, {Format(plan.TotalSizeOnDiskBytes)}");
+            Console.WriteLine(S("Cli.Found", plan.TotalCount, Format(plan.TotalSizeOnDiskBytes)));
             Console.WriteLine();
 
             foreach (var group in plan.Groups)
             {
-                Console.WriteLine($"  {Describe(group.Title),-32} {group.Operations.Count,8} шт.  {Format(group.SizeOnDiskBytes),12}");
+                Console.WriteLine($"  {Describe(group.Title),-32} {group.Operations.Count,8} {S("Cli.Items")}  {Format(group.SizeOnDiskBytes),12}");
             }
 
             Console.WriteLine();
-            Console.WriteLine("Это оценка сверху: часть файлов может быть занята работающими программами.");
+            Console.WriteLine(S("Cli.UpperBound"));
             return 0;
         }
 
@@ -134,15 +123,15 @@ namespace Vacate.Cli
             var runtimes = apps.Where(a => a.LooksLikeRuntime).ToList();
             var visible = showRuntimes ? apps : apps.Where(a => !a.LooksLikeRuntime).ToList();
 
-            Console.WriteLine($"Установлено программ: {visible.Count}");
+            Console.WriteLine(S("Cli.AppsCount", visible.Count));
             Console.WriteLine();
 
             foreach (var app in visible)
             {
-                var size = app.EstimatedSizeBytes > 0 ? Format(app.EstimatedSizeBytes) : "—";
-                var scope = app.Scope == InstallScope.User ? " (только для вас)" : string.Empty;
-                var runtime = app.LooksLikeRuntime ? "  [нужна другим программам]" : string.Empty;
-                var cannot = app.CanUninstall ? string.Empty : "  [нет команды удаления]";
+                var size = app.EstimatedSizeBytes > 0 ? Format(app.EstimatedSizeBytes) : S("Cli.Dash");
+                var scope = app.Scope == InstallScope.User ? " " + S("Cli.ForYou") : string.Empty;
+                var runtime = app.LooksLikeRuntime ? "  " + S("Cli.NeededByOthers") : string.Empty;
+                var cannot = app.CanUninstall ? string.Empty : "  " + S("Cli.NoUninstallCommand");
 
                 Console.WriteLine($"  {Trim(app.DisplayName, 44),-44} {Trim(app.Version, 14),-14} {size,10}{scope}{runtime}{cannot}");
             }
@@ -150,12 +139,12 @@ namespace Vacate.Cli
             if (!showRuntimes && runtimes.Count > 0)
             {
                 Console.WriteLine();
-                Console.WriteLine($"Скрыто сред выполнения: {runtimes.Count}. Показать: vacate apps --all");
-                Console.WriteLine("От них зависят другие программы, поэтому удалять их вслепую нельзя.");
+                Console.WriteLine(S("Cli.RuntimesHidden", runtimes.Count));
+                Console.WriteLine(S("Cli.RuntimesWhy"));
             }
 
             Console.WriteLine();
-            Console.WriteLine("Размер указан по заявлению самой программы и часто занижен.");
+            Console.WriteLine(S("Cli.SizeSelfReported"));
 
             return 0;
         }
@@ -173,7 +162,7 @@ namespace Vacate.Cli
 
                     if (executable is null)
                     {
-                        Console.WriteLine("Не удалось определить путь к программе.");
+                        Console.WriteLine(S("Cli.NoPath"));
                         return 1;
                     }
 
@@ -182,8 +171,8 @@ namespace Vacate.Cli
 
                     if (result.Success)
                     {
-                        Console.WriteLine("Автоматически выполняются только безопасные категории:");
-                        Console.WriteLine("временные файлы и кэши. Реестр и программы не затрагиваются никогда.");
+                        Console.WriteLine(S("Cli.ScheduleSafeOnly1"));
+                        Console.WriteLine(S("Cli.ScheduleSafeOnly2"));
                     }
 
                     return result.Success ? 0 : 1;
@@ -202,16 +191,16 @@ namespace Vacate.Cli
 
                     if (!state.Enabled)
                     {
-                        Console.WriteLine("Автоматическая очистка выключена.");
-                        Console.WriteLine("Включить: vacate schedule on");
+                        Console.WriteLine(S("Cli.ScheduleOff"));
+                        Console.WriteLine(S("Cli.ScheduleHowOn"));
                         return 0;
                     }
 
-                    Console.WriteLine($"Автоматическая очистка включена, {state.Frequency}.");
+                    Console.WriteLine(S("Cli.ScheduleOn", state.Description));
 
                     if (state.NextRun is { } next)
                     {
-                        Console.WriteLine($"Следующий запуск: {next:dd.MM.yyyy HH:mm}");
+                        Console.WriteLine(S("Cli.ScheduleNext", next.ToString("dd.MM.yyyy HH:mm")));
                     }
 
                     return 0;
@@ -280,7 +269,7 @@ namespace Vacate.Cli
         {
             if (string.IsNullOrWhiteSpace(planPath) || !File.Exists(planPath))
             {
-                await WriteReportAsync(reportPath, null, "Файл плана не найден");
+                await WriteReportAsync(reportPath, null, S("Cli.PlanNotFound"));
                 return 2;
             }
 
@@ -288,7 +277,7 @@ namespace Vacate.Cli
             {
                 // Задание для процесса с правами администратора не может лежать там,
                 // где его способен подменить другой пользователь.
-                await WriteReportAsync(reportPath, null, "Файл плана лежит вне временной папки пользователя");
+                await WriteReportAsync(reportPath, null, S("Cli.PlanOutsideTemp"));
                 return 3;
             }
 
@@ -305,13 +294,13 @@ namespace Vacate.Cli
                 // разбор ошибок широкий — в отчёт должна попасть причина, а не пустота.
                 // Отдельно ловится NotSupportedException: именно им отвечает разбор JSON
                 // на операцию без указания типа, и раньше он ронял процесс целиком.
-                await WriteReportAsync(reportPath, null, $"План не удалось прочитать: {ex.Message}");
+                await WriteReportAsync(reportPath, null, S("Cli.PlanUnreadable", ex.Message));
                 return 4;
             }
 
             if (plan is null || plan.TotalCount == 0)
             {
-                await WriteReportAsync(reportPath, null, "План пуст");
+                await WriteReportAsync(reportPath, null, S("Cli.PlanEmpty"));
                 return 5;
             }
 
@@ -322,11 +311,11 @@ namespace Vacate.Cli
             // уже есть: этот процесс для того и поднят.
             if (RestorePoint.IsWorthIt(plan))
             {
-                var point = new RestorePoint().Create("Перед работой Vacate");
+                var point = new RestorePoint().Create(S("Cli.BeforeVacate"));
 
                 Console.WriteLine(point.Status == RestorePointStatus.Created
-                    ? "Точка восстановления системы создана."
-                    : $"Точка восстановления не создана: {point.Message}");
+                    ? S("Cli.RestorePointMade")
+                    : S("Cli.RestorePointFailed", point.Message));
             }
 
             var (_, policy) = BuildScanner();
@@ -368,7 +357,7 @@ namespace Vacate.Cli
 
         /// <summary>Сообщить о сбое, который не удалось обработать по месту.</summary>
         public static Task ReportFatalAsync(string? reportPath, Exception exception)
-            => WriteReportAsync(reportPath, null, $"Сбой при выполнении плана: {exception.Message}");
+            => WriteReportAsync(reportPath, null, S("Cli.PlanFailure", exception.Message));
 
         private static async Task WriteReportAsync(
             string? reportPath,
@@ -418,7 +407,7 @@ namespace Vacate.Cli
         {
             if (!SystemIntegrityChecker.IsElevated())
             {
-                const string Message = "Проверка целостности возможна только с правами администратора.";
+                var Message = S("Cli.IntegrityNeedsRights");
 
                 Console.WriteLine(Message);
                 await WriteIntegrityReportAsync(reportPath, IntegrityStatus.NeedsElevation, Message);
@@ -426,9 +415,9 @@ namespace Vacate.Cli
                 return 2;
             }
 
-            Console.WriteLine("Проверка целостности системных файлов.");
-            Console.WriteLine("Занимает от 10 до 40 минут. Прервать её нельзя: закрытие этого окна");
-            Console.WriteLine("проверку не остановит, она продолжит работать в фоне.");
+            Console.WriteLine(S("Cli.IntegrityHeader"));
+            Console.WriteLine(S("Cli.IntegrityHow1"));
+            Console.WriteLine(S("Cli.IntegrityHow2"));
             Console.WriteLine();
 
             var progress = new Progress<string>(Console.WriteLine);
@@ -483,11 +472,11 @@ namespace Vacate.Cli
 
                 if (saved.Count == 0)
                 {
-                    Console.WriteLine("Наблюдений нет. Начать: vacate watch <имя>");
+                    Console.WriteLine(S("Cli.NoWatches"));
                     return 0;
                 }
 
-                Console.WriteLine("Незакрытые наблюдения:");
+                Console.WriteLine(S("Cli.OpenWatches"));
                 saved.ToList().ForEach(s => Console.WriteLine($"  {s}"));
 
                 return 0;
@@ -504,12 +493,12 @@ namespace Vacate.Cli
 
                 if (string.IsNullOrWhiteSpace(name))
                 {
-                    Console.WriteLine("Укажите имя: vacate watch forget <имя>");
+                    Console.WriteLine(S("Cli.WatchNameForget"));
                     return 2;
                 }
 
                 watcher.Forget(name);
-                Console.WriteLine($"Наблюдение «{name}» закрыто.");
+                Console.WriteLine(S("Cli.WatchClosed", name));
 
                 return 0;
             }
@@ -518,18 +507,18 @@ namespace Vacate.Cli
 
             if (string.IsNullOrWhiteSpace(label))
             {
-                Console.WriteLine("Укажите имя наблюдения: vacate watch <имя>");
-                Console.WriteLine("Потом установите программу и выполните: vacate watch diff <имя>");
+                Console.WriteLine(S("Cli.WatchName"));
+                Console.WriteLine(S("Cli.WatchThen"));
                 return 2;
             }
 
-            Console.WriteLine("Снимаю состояние системы…");
+            Console.WriteLine(S("Cli.WatchTaking"));
 
             var path = watcher.Save(watcher.Capture(), label);
 
-            Console.WriteLine($"Снимок сохранён: {path}");
+            Console.WriteLine(S("Cli.WatchSaved", path));
             Console.WriteLine();
-            Console.WriteLine("Теперь установите программу, а затем выполните:");
+            Console.WriteLine(S("Cli.WatchNowInstall"));
             Console.WriteLine($"  vacate watch diff {label}");
 
             return 0;
@@ -539,7 +528,7 @@ namespace Vacate.Cli
         {
             if (string.IsNullOrWhiteSpace(label))
             {
-                Console.WriteLine("Укажите имя наблюдения: vacate watch diff <имя>. Список — vacate watch list.");
+                Console.WriteLine(S("Cli.WatchDiffName"));
                 return 2;
             }
 
@@ -547,51 +536,51 @@ namespace Vacate.Cli
 
             if (before is null)
             {
-                Console.WriteLine($"Наблюдение «{label}» не найдено.");
+                Console.WriteLine(S("Cli.WatchNotFound", label));
                 return 1;
             }
 
-            Console.WriteLine("Снимаю состояние системы и сравниваю…");
+            Console.WriteLine(S("Cli.WatchComparing"));
 
             var difference = watcher.Compare(before, watcher.Capture());
 
             Console.WriteLine();
-            Console.WriteLine($"С {before.TakenAtUtc.ToLocalTime():dd.MM.yyyy HH:mm} появилось:");
+            Console.WriteLine(S("Cli.WatchSince", before.TakenAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")));
             Console.WriteLine();
 
             if (difference.IsEmpty)
             {
-                Console.WriteLine("  ничего нового");
+                Console.WriteLine(S("Cli.WatchNothingNew"));
                 return 0;
             }
 
             if (difference.NewApps.Count > 0)
             {
-                Console.WriteLine($"Записей в списке установленного: {difference.NewApps.Count}");
+                Console.WriteLine(S("Cli.WatchNewApps", difference.NewApps.Count));
                 difference.NewApps.ToList().ForEach(a => Console.WriteLine($"  {a}"));
                 Console.WriteLine();
             }
 
             if (difference.NewDirectories.Count > 0)
             {
-                Console.WriteLine($"Каталогов: {difference.NewDirectories.Count}");
+                Console.WriteLine(S("Cli.WatchNewDirs", difference.NewDirectories.Count));
                 difference.NewDirectories.ToList().ForEach(d => Console.WriteLine($"  {d}"));
                 Console.WriteLine();
             }
 
             if (difference.NewRegistryKeys.Count > 0)
             {
-                Console.WriteLine($"Ветвей реестра: {difference.NewRegistryKeys.Count}");
+                Console.WriteLine(S("Cli.WatchNewKeys", difference.NewRegistryKeys.Count));
                 difference.NewRegistryKeys.ToList().ForEach(k => Console.WriteLine($"  {k}"));
                 Console.WriteLine();
             }
 
             // Между снимками работает не только установщик: система обновляется,
             // браузер пишет кэш, антивирус обновляет базы. Молчать об этом нельзя.
-            Console.WriteLine("В этот список попало всё, что появилось за время наблюдения, — включая");
-            Console.WriteLine("работу системы и других программ. Проверьте пути глазами перед удалением.");
+            Console.WriteLine(S("Cli.WatchCaveat1"));
+            Console.WriteLine(S("Cli.WatchCaveat2"));
             Console.WriteLine();
-            Console.WriteLine($"Закончить наблюдение: vacate watch forget {label}");
+            Console.WriteLine(S("Cli.WatchFinish", label));
 
             return 0;
         }
@@ -599,15 +588,15 @@ namespace Vacate.Cli
         /// <summary>Создать точку восстановления по прямой просьбе.</summary>
         public static int CreateRestorePoint()
         {
-            var result = new RestorePoint().Create("Создано вручную через Vacate");
+            var result = new RestorePoint().Create(S("Cli.RestoreManual"));
 
             Console.WriteLine(result.Message);
 
             if (result.Status == RestorePointStatus.Disabled)
             {
                 Console.WriteLine();
-                Console.WriteLine("Защита системы включается в свойствах системы:");
-                Console.WriteLine("  Панель управления → Система → Защита системы → Настроить");
+                Console.WriteLine(S("Cli.ProtectionHowOn1"));
+                Console.WriteLine(S("Cli.ProtectionHowOn2"));
             }
 
             return result.Status == RestorePointStatus.Created ? 0 : 1;
@@ -619,62 +608,62 @@ namespace Vacate.Cli
 
             if (disks.Count == 0)
             {
-                Console.WriteLine("Не удалось получить сведения о дисках.");
-                Console.WriteLine("Часть данных доступна только с правами администратора.");
+                Console.WriteLine(S("Cli.NoDiskInfo"));
+                Console.WriteLine(S("Cli.NoDiskInfoWhy"));
                 return 1;
             }
 
             foreach (var disk in disks)
             {
                 Console.WriteLine($"{disk.Model}  ({disk.MediaType}, {Format(disk.SizeBytes)})");
-                Console.WriteLine($"  Состояние:      {DescribeHealth(disk.Health)}");
+                Console.WriteLine(S("Cli.DiskState", DescribeHealth(disk.Health)));
 
                 if (disk.TemperatureCelsius is { } temperature)
                 {
-                    Console.WriteLine($"  Температура:    {temperature} °C");
+                    Console.WriteLine(S("Cli.DiskTemp", temperature));
                 }
 
                 if (disk.WearPercent is { } wear)
                 {
-                    Console.WriteLine($"  Износ:          {wear}%");
+                    Console.WriteLine(S("Cli.DiskWear", wear));
                 }
 
                 if (disk.PowerOnHours is { } hours)
                 {
-                    Console.WriteLine($"  Наработка:      {hours} ч ({hours / 24 / 365.0:0.#} лет)");
+                    Console.WriteLine(S("Cli.DiskHours", hours, (hours / 24 / 365.0).ToString("0.#")));
                 }
 
                 if (disk.ReadErrorsTotal is { } errors && errors > 0)
                 {
-                    Console.WriteLine($"  Ошибок чтения:  {errors}");
+                    Console.WriteLine(S("Cli.DiskErrors", errors));
                 }
 
                 // Молчание диска — это не «всё хорошо», и говорить об этом надо прямо.
                 if (disk.Unavailable.Count > 0)
                 {
-                    Console.WriteLine($"  Диск не сообщает: {string.Join(", ", disk.Unavailable)}");
+                    Console.WriteLine(S("Cli.DiskSilentPrefix") + string.Join(", ", disk.Unavailable));
                 }
 
                 if (disk.NeedsAttention)
                 {
-                    Console.WriteLine("  ВНИМАНИЕ: показатели требуют проверки, сделайте резервную копию важных данных");
+                    Console.WriteLine(S("Cli.DiskAttention"));
                 }
 
                 Console.WriteLine();
             }
 
-            Console.WriteLine("Показатели берутся у самого диска. Если он их не сообщает,");
-            Console.WriteLine("здесь будет честное «не сообщает», а не выдуманная оценка.");
+            Console.WriteLine(S("Cli.DiskNote1"));
+            Console.WriteLine(S("Cli.DiskNote2"));
 
             return 0;
         }
 
         private static string DescribeHealth(DiskHealthStatus status) => status switch
         {
-            DiskHealthStatus.Healthy => "исправен",
-            DiskHealthStatus.Warning => "есть предупреждения",
-            DiskHealthStatus.Unhealthy => "неисправен",
-            _ => "диск не сообщил (это не значит «всё хорошо»)",
+            DiskHealthStatus.Healthy => S("Cli.HealthOk"),
+            DiskHealthStatus.Warning => S("Cli.HealthWarn"),
+            DiskHealthStatus.Unhealthy => S("Cli.HealthBad"),
+            _ => S("Cli.HealthUnknown"),
         };
 
         public static int Disk(string? root)
@@ -683,34 +672,34 @@ namespace Vacate.Cli
 
             if (!Directory.Exists(root))
             {
-                Console.WriteLine($"Папка не найдена: {root}");
+                Console.WriteLine(S("Cli.FolderNotFound", root));
                 return 1;
             }
 
-            Console.WriteLine($"Анализирую: {root}");
-            Console.WriteLine("Это может занять время на больших папках.");
+            Console.WriteLine(S("Cli.Analysing", root));
+            Console.WriteLine(S("Cli.AnalysingNote"));
             Console.WriteLine();
 
             var result = new DiskAnalyzer(new QuarantinePathCheck()).Analyze(root);
 
-            Console.WriteLine($"Просмотрено файлов: {result.TotalFilesScanned}, всего {Format(result.TotalBytesScanned)}");
+            Console.WriteLine(S("Cli.Scanned", result.TotalFilesScanned, Format(result.TotalBytesScanned)));
             Console.WriteLine();
 
-            Console.WriteLine("Куда уходит место:");
+            Console.WriteLine(S("Cli.WhereSpace"));
             foreach (var category in result.ByCategory.Take(8))
             {
-                Console.WriteLine($"  {category.Category,-30} {Format(category.TotalBytes),12}   {category.FileCount} шт.");
+                Console.WriteLine($"  {category.Category,-30} {Format(category.TotalBytes),12}   {category.FileCount} {S("Cli.Items")}");
             }
 
             Console.WriteLine();
-            Console.WriteLine("Самые большие папки:");
+            Console.WriteLine(S("Cli.BiggestFolders"));
             foreach (var directory in result.LargestDirectories.Take(8))
             {
                 Console.WriteLine($"  {Trim(Path.GetFileName(directory.Category), 40),-40} {Format(directory.TotalBytes),12}");
             }
 
             Console.WriteLine();
-            Console.WriteLine("Самые большие файлы:");
+            Console.WriteLine(S("Cli.BiggestFiles"));
             foreach (var file in result.LargestFiles.Take(8))
             {
                 Console.WriteLine($"  {Trim(Path.GetFileName(file.Path), 46),-46} {Format(file.SizeOnDiskBytes),12}");
@@ -719,11 +708,11 @@ namespace Vacate.Cli
             if (result.Duplicates.Count > 0)
             {
                 Console.WriteLine();
-                Console.WriteLine($"Одинаковые файлы (освободится {Format(result.RecoverableFromDuplicates)}):");
+                Console.WriteLine(S("Cli.Duplicates", Format(result.RecoverableFromDuplicates)));
 
                 foreach (var group in result.Duplicates.Take(5))
                 {
-                    Console.WriteLine($"  {group.Files.Count} копии по {Format(group.FileSizeBytes)}:");
+                    Console.WriteLine(S("Cli.DuplicateGroup", group.Files.Count, Format(group.FileSizeBytes)));
 
                     foreach (var file in group.Files)
                     {
@@ -736,7 +725,7 @@ namespace Vacate.Cli
             if (result.SkipNotes.Count > 0)
             {
                 Console.WriteLine();
-                Console.WriteLine("Что не вошло в подсчёт:");
+                Console.WriteLine(S("Cli.NotCounted"));
                 result.SkipNotes.ToList().ForEach(n => Console.WriteLine($"  · {n}"));
             }
 
@@ -749,24 +738,24 @@ namespace Vacate.Cli
 
             if (extensions.Count == 0)
             {
-                Console.WriteLine("Расширений не найдено.");
+                Console.WriteLine(S("Cli.NoExtensions"));
                 return 0;
             }
 
-            Console.WriteLine($"Расширений установлено: {extensions.Count}");
+            Console.WriteLine(S("Cli.ExtensionsCount", extensions.Count));
             Console.WriteLine();
 
             // Сначала те, кто просит больше всего прав: именно их стоит пересмотреть.
             foreach (var extension in extensions)
             {
                 var size = extension.SizeBytes > 0 ? Format(extension.SizeBytes) : string.Empty;
-                var marker = extension.ReadsAllSites ? " ← читает все сайты" : string.Empty;
+                var marker = extension.ReadsAllSites ? S("Cli.ReadsAllSites") : string.Empty;
 
                 Console.WriteLine($"  {Trim(extension.Name, 40),-40} {extension.Browser,-16} {size,10}{marker}");
 
                 if (extension.ProfileName != "Default")
                 {
-                    Console.WriteLine($"      профиль: {extension.ProfileName}");
+                    Console.WriteLine(S("Cli.Profile", extension.ProfileName));
                 }
 
                 // Показываем только то, что действительно стоит внимания:
@@ -788,12 +777,12 @@ namespace Vacate.Cli
 
             if (dangerous > 0)
             {
-                Console.WriteLine($"Расширений с доступом ко всем сайтам: {dangerous}.");
-                Console.WriteLine("Такое расширение видит всё, что вы открываете, включая банк и почту.");
+                Console.WriteLine(S("Cli.DangerousCount", dangerous));
+                Console.WriteLine(S("Cli.DangerousNote"));
             }
 
-            Console.WriteLine("Отключение и удаление делаются в самом браузере: правку его настроек");
-            Console.WriteLine("извне браузер отменяет при следующем запуске.");
+            Console.WriteLine(S("Cli.ExtensionsHow1"));
+            Console.WriteLine(S("Cli.ExtensionsHow2"));
 
             return 0;
         }
@@ -815,8 +804,8 @@ namespace Vacate.Cli
         {
             if (string.IsNullOrWhiteSpace(id))
             {
-                Console.WriteLine("Укажите запись: vacate startup off <идентификатор>.");
-                Console.WriteLine("Идентификаторы показывает vacate startup --all.");
+                Console.WriteLine(S("Cli.StartupIdNeeded"));
+                Console.WriteLine(S("Cli.StartupIdWhere"));
                 return 2;
             }
 
@@ -825,13 +814,13 @@ namespace Vacate.Cli
 
             if (entry is null)
             {
-                Console.WriteLine($"Запись «{id}» не найдена.");
+                Console.WriteLine(S("Cli.EntryNotFound", id));
                 return 1;
             }
 
             if (entry.IsEnabled == enable)
             {
-                Console.WriteLine($"«{entry.Name}» уже {(enable ? "включена" : "отключена")}.");
+                Console.WriteLine(S(enable ? "Cli.AlreadyOn" : "Cli.AlreadyOff", entry.Name));
                 return 0;
             }
 
@@ -839,24 +828,24 @@ namespace Vacate.Cli
 
             if (!outcome.Success)
             {
-                Console.WriteLine(outcome.Message ?? "Не удалось переключить запись.");
+                Console.WriteLine(outcome.Message ?? S("Cli.ToggleFailed"));
 
                 if (StartupToggle.RequiresElevation(entry) && !SystemIntegrityChecker.IsElevated())
                 {
-                    Console.WriteLine("Эта запись общая для всех пользователей — запустите команду от имени администратора.");
+                    Console.WriteLine(S("Cli.NeedsAdminEntry"));
                 }
 
                 return 1;
             }
 
-            Console.WriteLine($"«{entry.Name}» {(enable ? "включена" : "отключена")}.");
+            Console.WriteLine(S(enable ? "Cli.TurnedOn" : "Cli.TurnedOff", entry.Name));
 
             if (entry.Source == StartupSource.Service && !enable)
             {
                 // Разница существенная, и человек должен о ней знать: иначе решит,
                 // что отключение не сработало, увидев службу работающей.
-                Console.WriteLine("Служба переведена в режим «вручную»: сама при загрузке не стартует,");
-                Console.WriteLine("но программа, которой она нужна, поднимет её по требованию.");
+                Console.WriteLine(S("Cli.ServiceManual1"));
+                Console.WriteLine(S("Cli.ServiceManual2"));
             }
 
             return 0;
@@ -875,7 +864,7 @@ namespace Vacate.Cli
 
             var services = entries.Where(e => e.Source == StartupSource.Service).ToList();
 
-            Console.WriteLine($"Записей автозапуска: {visible.Count}");
+            Console.WriteLine(S("Cli.StartupCount", visible.Count));
             Console.WriteLine();
 
             foreach (var group in visible.GroupBy(e => e.Source))
@@ -884,9 +873,9 @@ namespace Vacate.Cli
 
                 foreach (var entry in group)
                 {
-                    var state = entry.IsEnabled ? "вкл " : "выкл";
-                    var scope = entry.Scope == InstallScope.User ? "вы" : "все";
-                    var locked = entry.Control == StartupControl.ViewOnly ? "  [только просмотр]" : string.Empty;
+                    var state = S(entry.IsEnabled ? "Cli.On" : "Cli.Off");
+                    var scope = S(entry.Scope == InstallScope.User ? "Cli.ScopeYou" : "Cli.ScopeAll");
+                    var locked = entry.Control == StartupControl.ViewOnly ? S("Cli.ViewOnly") : string.Empty;
 
                     Console.WriteLine($"  [{state}] {Trim(entry.Name, 38),-38} {scope,-4} {Trim(entry.ImagePath, 46)}{locked}");
 
@@ -909,8 +898,8 @@ namespace Vacate.Cli
             if (!showAll && services.Count > 0)
             {
                 var locked = services.Count(s => s.Control == StartupControl.ViewOnly);
-                Console.WriteLine($"Служб в автозапуске: {services.Count}, из них защищённых от отключения: {locked}.");
-                Console.WriteLine("Показать: vacate startup --all");
+                Console.WriteLine(S("Cli.ServicesCount", services.Count, locked));
+                Console.WriteLine(S("Cli.ShowAll"));
             }
 
             return 0;
@@ -918,37 +907,38 @@ namespace Vacate.Cli
 
         private static string DescribeSource(StartupSource source) => source switch
         {
-            StartupSource.RunKey => "Реестр, ключ автозапуска",
-            StartupSource.StartupFolder => "Папка автозагрузки",
-            StartupSource.ScheduledTask => "Задачи планировщика",
-            _ => "Службы Windows",
+            StartupSource.RunKey => S("Cli.SourceRun"),
+            StartupSource.StartupFolder => S("Cli.SourceFolder"),
+            StartupSource.ScheduledTask => S("Cli.SourceTask"),
+            _ => S("Cli.SourceService"),
         };
 
         public static int Leftovers(string? query)
         {
-            var app = ResolveApp(query, "vacate leftovers <часть названия>");
+            var app = ResolveApp(query, S("Cli.UsageLeftovers"));
 
             if (app is null)
             {
                 return 2;
             }
 
-            Console.WriteLine($"Следы программы «{app.DisplayName}»");
+            Console.WriteLine(S("Cli.Traces", app.DisplayName));
 
             var found = new LeftoverScanner().Scan(app);
 
             if (found.Count == 0)
             {
-                Console.WriteLine("Ничего не найдено — программа не оставила заметных следов.");
+                Console.WriteLine(S("Cli.NoTracesFound"));
                 return 0;
             }
 
             PrintLeftovers(found);
 
-            Console.WriteLine("Ничего не удалено: это только показ.");
+            Console.WriteLine(S("Cli.ShowOnly"));
+
             // Имя в кавычках: почти все названия многословны, и подсказка без кавычек
             // отправила бы человека в ошибку «подходит несколько программ».
-            Console.WriteLine($"Удалить программу вместе со следами: vacate uninstall \"{app.DisplayName}\"");
+            Console.WriteLine(S("Cli.HowToRemove", app.DisplayName));
             return 0;
         }
 
@@ -966,25 +956,25 @@ namespace Vacate.Cli
         /// </remarks>
         public static async Task<int> UninstallAsync(string? query, bool silent, bool assumeYes)
         {
-            var app = ResolveApp(query, "vacate uninstall <часть названия>");
+            var app = ResolveApp(query, S("Cli.UsageUninstall"));
 
             if (app is null)
             {
                 return 2;
             }
 
-            Console.WriteLine($"Программа:  {app.DisplayName}");
-            Console.WriteLine($"Издатель:   {app.Publisher ?? "не указан"}");
-            Console.WriteLine($"Версия:     {app.Version ?? "не указана"}");
-            Console.WriteLine($"Каталог:    {app.InstallLocation ?? "не указан"}");
+            Console.WriteLine(S("Cli.Program", app.DisplayName));
+            Console.WriteLine(S("Cli.Publisher", app.Publisher ?? S("Cli.NotStated")));
+            Console.WriteLine(S("Cli.Version", app.Version ?? S("Cli.VersionNotStated")));
+            Console.WriteLine(S("Cli.Directory", app.InstallLocation ?? S("Cli.NotStated")));
             Console.WriteLine();
 
             if (app.LooksLikeRuntime)
             {
                 // Не запрет, а честное предупреждение: удалять компоненты иногда нужно,
                 // но человек должен знать, что ломает не одну программу.
-                Console.WriteLine("ВНИМАНИЕ: похоже на компонент, нужный другим программам.");
-                Console.WriteLine("После его удаления программы, которые на него опираются, перестанут запускаться.");
+                Console.WriteLine(S("Cli.RuntimeWarning"));
+                Console.WriteLine(S("Cli.RuntimeWarning2"));
                 Console.WriteLine();
             }
 
@@ -992,33 +982,30 @@ namespace Vacate.Cli
             // программу больше, чем можем узнать мы по косвенным признакам.
             if (ForcedUninstall.IsApplicable(app))
             {
-                Console.WriteLine(app.CanUninstall
-                    ? "Деинсталлятор программы не найден: запись пережила саму программу."
-                    : "Программа не сообщила системе, как её удалять.");
-
-                Console.WriteLine("Vacate поищет оставшиеся файлы и уберёт запись из списка установленного.");
+                Console.WriteLine(S(app.CanUninstall ? "Cli.ForcedIntro1" : "Cli.ForcedIntro2"));
+                Console.WriteLine(S("Cli.ForcedIntro3"));
                 Console.WriteLine();
 
-                if (!Confirm("Удалить принудительно?", assumeYes))
+                if (!Confirm(S("Cli.ForcedConfirm"), assumeYes))
                 {
-                    Console.WriteLine("Отменено. Ничего не изменилось.");
+                    Console.WriteLine(S("Cli.Cancelled"));
                     return 0;
                 }
 
                 return await CleanLeftoversAsync(app, assumeYes, forced: true);
             }
 
-            Console.WriteLine("Сейчас запустится деинсталлятор самой программы. Он чужой:");
-            Console.WriteLine("что именно он удалит и о чём спросит, зависит от него, а не от Vacate.");
+            Console.WriteLine(S("Cli.UninstallerIntro1"));
+            Console.WriteLine(S("Cli.UninstallerIntro2"));
             Console.WriteLine();
 
-            if (!Confirm("Запустить удаление?", assumeYes))
+            if (!Confirm(S("Cli.StartRemoval"), assumeYes))
             {
-                Console.WriteLine("Отменено. Ничего не изменилось.");
+                Console.WriteLine(S("Cli.Cancelled"));
                 return 0;
             }
 
-            Console.WriteLine("Жду завершения деинсталлятора…");
+            Console.WriteLine(S("Cli.Waiting"));
 
             var outcome = await new UninstallRunner()
                 .RunAsync(app, silent, TimeSpan.FromMinutes(30), CancellationToken.None);
@@ -1032,13 +1019,13 @@ namespace Vacate.Cli
 
             if (outcome.Status is UninstallStatus.Failed or UninstallStatus.TimedOut)
             {
-                Console.WriteLine("Следы не ищем: программа, возможно, осталась на месте.");
+                Console.WriteLine(S("Cli.NoTraceSearch"));
                 return 1;
             }
 
             if (outcome.Status == UninstallStatus.Completed && outcome.Message is null)
             {
-                Console.WriteLine("Деинсталлятор отработал.");
+                Console.WriteLine(S("Cli.UninstallerDone"));
             }
 
             Console.WriteLine();
@@ -1052,13 +1039,13 @@ namespace Vacate.Cli
         /// </param>
         private static async Task<int> CleanLeftoversAsync(InstalledApp app, bool assumeYes, bool forced = false)
         {
-            Console.WriteLine("Ищу следы…");
+            Console.WriteLine(S("Cli.Searching"));
 
             var found = new LeftoverScanner().Scan(app);
 
             if (found.Count == 0)
             {
-                Console.WriteLine("Файлов программы не найдено.");
+                Console.WriteLine(S("Cli.NoFiles"));
 
                 return forced ? RemoveRegistration(app) : 0;
             }
@@ -1072,26 +1059,26 @@ namespace Vacate.Cli
 
             if (proposed.Count == 0)
             {
-                Console.WriteLine("К удалению ничего не предлагается: всё найденное — только возможные совпадения.");
-                Console.WriteLine("Проверьте пути выше сами и удалите вручную, если это действительно следы программы.");
+                Console.WriteLine(S("Cli.NothingProposed"));
+                Console.WriteLine(S("Cli.CheckYourself"));
                 return 0;
             }
 
             var size = proposed.Sum(p => p.SizeOnDiskBytes);
 
-            Console.WriteLine($"К удалению предлагается: {proposed.Count} объектов, {Format(size)}.");
+            Console.WriteLine(S("Cli.Proposed", proposed.Count, Format(size)));
 
             if (uncertain > 0)
             {
-                Console.WriteLine($"Ещё {uncertain} возможных совпадений НЕ предлагается — проверьте их сами.");
+                Console.WriteLine(S("Cli.UncertainLeft", uncertain));
             }
 
-            Console.WriteLine("Каталоги уйдут в карантин и вернутся командой отката. Ветки реестра — без карантина.");
+            Console.WriteLine(S("Cli.QuarantineNote"));
             Console.WriteLine();
 
-            if (!Confirm("Удалить предложенное?", assumeYes))
+            if (!Confirm(S("Cli.RemoveProposed"), assumeYes))
             {
-                Console.WriteLine("Отменено. Ничего не изменилось.");
+                Console.WriteLine(S("Cli.Cancelled"));
                 return 0;
             }
 
@@ -1099,7 +1086,7 @@ namespace Vacate.Cli
 
             if (plan.TotalCount == 0)
             {
-                Console.WriteLine("Удалять нечего: объекты исчезли, пока вы читали список.");
+                Console.WriteLine(S("Cli.NothingToRemove"));
                 return 0;
             }
 
@@ -1129,19 +1116,19 @@ namespace Vacate.Cli
             if (report.Succeeded > 0)
             {
                 Console.WriteLine();
-                Console.WriteLine($"Вернуть удалённые каталоги: vacate undo {report.SessionId}");
+                Console.WriteLine(S("Cli.UndoDirs", report.SessionId));
             }
 
             if (backup?.Path is not null)
             {
-                Console.WriteLine($"Копия ветвей реестра: {backup.Path}");
-                Console.WriteLine("Чтобы вернуть их, откройте этот файл двойным щелчком.");
+                Console.WriteLine(S("Cli.BackupAt", backup.Path));
+                Console.WriteLine(S("Cli.BackupHowTo"));
             }
 
             if (backup is { Failed.Count: > 0 })
             {
                 // Молчаливый пропуск читался бы как «всё сохранено».
-                Console.WriteLine("Не удалось сохранить копию ветвей: " + string.Join(", ", backup.Failed));
+                Console.WriteLine(S("Cli.BackupFailed", string.Join(", ", backup.Failed)));
             }
 
             // Запись из списка убирается ПОСЛЕДНЕЙ: убери её первой — и при сорвавшемся
@@ -1164,7 +1151,7 @@ namespace Vacate.Cli
 
             if (!outcome.Success)
             {
-                Console.WriteLine("Программа останется в списке установленного.");
+                Console.WriteLine(S("Cli.StillListed"));
             }
 
             return outcome.Success ? 0 : 1;
@@ -1175,7 +1162,7 @@ namespace Vacate.Cli
         {
             if (string.IsNullOrWhiteSpace(query))
             {
-                Console.WriteLine($"Укажите программу: {usage}. Список — vacate apps.");
+                Console.WriteLine(S("Cli.SpecifyProgram", usage));
                 return null;
             }
 
@@ -1186,7 +1173,7 @@ namespace Vacate.Cli
             switch (matches.Count)
             {
                 case 0:
-                    Console.WriteLine($"Программа с названием «{query}» не найдена.");
+                    Console.WriteLine(S("Cli.NotFound", query));
                     return null;
 
                 case 1:
@@ -1194,7 +1181,7 @@ namespace Vacate.Cli
 
                 default:
                     // Угадывать нельзя: удалили бы не то, что имел в виду человек.
-                    Console.WriteLine("Подходит несколько программ, уточните запрос:");
+                    Console.WriteLine(S("Cli.Ambiguous"));
                     matches.ForEach(a => Console.WriteLine($"  {a.DisplayName}"));
                     return null;
             }
@@ -1214,7 +1201,7 @@ namespace Vacate.Cli
                 {
                     var size = item.SizeOnDiskBytes > 0 ? Format(item.SizeOnDiskBytes) : string.Empty;
                     Console.WriteLine($"  {item.Path,-64} {size,10}");
-                    Console.WriteLine($"      почему: {string.Join("; ", item.Evidence)}");
+                    Console.WriteLine(S("Cli.Why", string.Join("; ", item.Evidence)));
                 }
 
                 Console.WriteLine();
@@ -1232,38 +1219,40 @@ namespace Vacate.Cli
         {
             if (assumeYes)
             {
-                Console.WriteLine($"{question} да (ключ --yes)");
+                Console.WriteLine(S("Cli.ConfirmYes", question));
                 return true;
             }
 
             if (Console.IsInputRedirected)
             {
                 // Спросить некого: команду запустили из сценария без ключа согласия.
-                Console.WriteLine($"{question} нет — ввод недоступен. Для запуска из сценария добавьте --yes.");
+                Console.WriteLine(S("Cli.NoInput", question));
                 return false;
             }
 
-            Console.Write($"{question} [да/нет] ");
+            Console.Write(S("Cli.ConfirmPrompt", question));
             var answer = Console.ReadLine()?.Trim().ToLowerInvariant();
 
+            // Оба языка принимаются независимо от выбранного: человек, переключивший
+            // интерфейс, по привычке набирает то, к чему привык.
             return answer is "да" or "yes" or "y" or "д";
         }
 
         private static string DescribeConfidence(LeftoverConfidence confidence) => confidence switch
         {
-            LeftoverConfidence.Certain => "Точно относится к программе",
-            LeftoverConfidence.Likely => "Скорее всего относится к программе",
-            _ => "Возможно, относится — проверьте сами (по умолчанию не отмечается)",
+            LeftoverConfidence.Certain => S("Cli.ConfCertain"),
+            LeftoverConfidence.Likely => S("Cli.ConfLikely"),
+            _ => S("Cli.ConfPossible"),
         };
 
         private static string Trim(string? value, int length)
         {
             if (string.IsNullOrEmpty(value))
             {
-                return "—";
+                return S("Cli.Dash");
             }
 
-            return value.Length <= length ? value : value[..(length - 1)] + "…";
+            return value.Length <= length ? value : value[..(length - 1)] + S("Cli.Ellipsis");
         }
 
         /// <summary>
@@ -1288,14 +1277,14 @@ namespace Vacate.Cli
 
             if (plan.TotalCount == 0)
             {
-                Console.WriteLine("Чисто, делать нечего.");
+                Console.WriteLine(S("Cli.NothingToDo"));
                 await WriteReportAsync(reportPath, null, null);
                 return 0;
             }
 
             Console.WriteLine(dryRun
-                ? $"Пробный прогон: {plan.TotalCount} объектов, {Format(plan.TotalSizeOnDiskBytes)}. Ничего не изменится."
-                : $"Очистка: {plan.TotalCount} объектов, {Format(plan.TotalSizeOnDiskBytes)}.");
+                ? S("Cli.DryRun", plan.TotalCount, Format(plan.TotalSizeOnDiskBytes))
+                : S("Cli.Cleaning", plan.TotalCount, Format(plan.TotalSizeOnDiskBytes)));
             Console.WriteLine();
 
             var quarantine = new FileSystemQuarantine();
@@ -1339,15 +1328,21 @@ namespace Vacate.Cli
 
             if (sessions.Count == 0)
             {
-                Console.WriteLine("Сеансов пока не было.");
+                Console.WriteLine(S("Cli.NoSessions"));
                 return 0;
             }
 
             foreach (var session in sessions)
             {
-                var restorable = session.HasRestorableItems ? "  можно откатить" : string.Empty;
-                Console.WriteLine($"{session.SessionId}  {session.StartedAtUtc.ToLocalTime():dd.MM.yyyy HH:mm}  " +
-                                  $"освобождено {Format(session.ActuallyFreedBytes),12}  объектов {session.ItemCount,7}{restorable}");
+                var restorable = session.HasRestorableItems ? S("Cli.Restorable") : string.Empty;
+
+                Console.WriteLine(S(
+                    "Cli.SessionLine",
+                    session.SessionId,
+                    session.StartedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm"),
+                    Format(session.ActuallyFreedBytes),
+                    session.ItemCount,
+                    restorable));
             }
 
             return 0;
@@ -1357,7 +1352,7 @@ namespace Vacate.Cli
         {
             if (string.IsNullOrWhiteSpace(sessionId))
             {
-                Console.WriteLine("Укажите сеанс: vacate undo <идентификатор>. Список — vacate history.");
+                Console.WriteLine(S("Cli.SpecifySession"));
                 return 2;
             }
 
@@ -1368,7 +1363,7 @@ namespace Vacate.Cli
 
             if (undoable.Count == 0)
             {
-                Console.WriteLine("Возвращать нечего: в этом сеансе не было обратимых операций.");
+                Console.WriteLine(S("Cli.NothingUndoable"));
                 return 0;
             }
 
@@ -1387,11 +1382,11 @@ namespace Vacate.Cli
                 else
                 {
                     failed++;
-                    Console.WriteLine($"  не вернулось: {entry.OriginalPath}");
+                    Console.WriteLine(S("Cli.NotRestored", entry.OriginalPath));
                 }
             }
 
-            Console.WriteLine($"Возвращено: {restored}. Не удалось: {failed}.");
+            Console.WriteLine(S("Cli.UndoResult", restored, failed));
             return failed == 0 ? 0 : 1;
         }
 
@@ -1412,35 +1407,35 @@ namespace Vacate.Cli
         {
             if (report.WasDryRun)
             {
-                Console.WriteLine($"Было бы обработано: {report.Succeeded} объектов, {Format(report.ClaimedBytes)}.");
-                Console.WriteLine("На диске ничего не изменилось.");
+                Console.WriteLine(S("Cli.WouldProcess", report.Succeeded, Format(report.ClaimedBytes)));
+                Console.WriteLine(S("Cli.NothingChanged"));
             }
             else
             {
                 // Две цифры рядом — суть честного счётчика.
-                Console.WriteLine($"Удалено:             {report.Succeeded} объектов, {Format(report.ClaimedBytes)}");
-                Console.WriteLine($"Реально освободилось: {Format(report.ActuallyFreedBytes)}");
+                Console.WriteLine(S("Cli.Removed", report.Succeeded, Format(report.ClaimedBytes)));
+                Console.WriteLine(S("Cli.ActuallyFreed", Format(report.ActuallyFreedBytes)));
             }
 
             if (report.Skipped > 0)
             {
-                Console.WriteLine($"Пропущено: {report.Skipped}");
+                Console.WriteLine(S("Cli.Skipped", report.Skipped));
             }
 
             if (report.Failed > 0)
             {
-                Console.WriteLine($"Не удалось: {report.Failed}");
+                Console.WriteLine(S("Cli.Failed", report.Failed));
             }
 
             if (report.Denied > 0)
             {
-                Console.WriteLine($"Отклонено охраной: {report.Denied}");
+                Console.WriteLine(S("Cli.Denied", report.Denied));
             }
 
             if (report.Discrepancies.Count > 0)
             {
                 Console.WriteLine();
-                Console.WriteLine("Куда делась разница:");
+                Console.WriteLine(S("Cli.WhereDifference"));
 
                 foreach (var reason in report.Discrepancies)
                 {
@@ -1452,18 +1447,18 @@ namespace Vacate.Cli
             if (report.Cancelled)
             {
                 Console.WriteLine();
-                Console.WriteLine("Прервано. Всё, что успели сделать, записано в журнал.");
+                Console.WriteLine(S("Cli.CancelledNote"));
             }
         }
 
         private static string Explain(DiscrepancyKind kind) => kind switch
         {
-            DiscrepancyKind.HeldByProcess => "занято работающей программой, вернётся при закрытии",
-            DiscrepancyKind.NotDeleted => "не удалось удалить",
-            DiscrepancyKind.HardLinked => "файл числится дважды, а занимает место один раз",
-            DiscrepancyKind.CompressedOrSparse => "сжатые файлы: на диске занимали меньше",
-            DiscrepancyKind.InQuarantine => "в карантине, освободится после истечения срока",
-            DiscrepancyKind.InRecycleBin => "в Корзине, освободится после её очистки",
+            DiscrepancyKind.HeldByProcess => S("Cli.WhyHeld"),
+            DiscrepancyKind.NotDeleted => S("Cli.WhyNotDeleted"),
+            DiscrepancyKind.HardLinked => S("Cli.WhyHardLinked"),
+            DiscrepancyKind.CompressedOrSparse => S("Cli.WhyCompressed"),
+            DiscrepancyKind.InQuarantine => S("Cli.WhyQuarantine"),
+            DiscrepancyKind.InRecycleBin => S("Cli.WhyRecycleBin"),
             _ => kind.ToString(),
         };
 
@@ -1478,12 +1473,12 @@ namespace Vacate.Cli
 
             return text.ResourceKey switch
             {
-                "Clean.Temp.User" => "Временные файлы пользователя",
-                "Clean.Temp.System" => "Временные файлы системы",
-                "Clean.Logs.Windows" => "Журналы Windows",
-                "Clean.Cache.Browsers" => "Кэши браузеров",
-                "Clean.Crash.Reports" => "Отчёты о сбоях программ",
-                "Clean.Cache.Delivery" => "Загруженные обновления Windows",
+                "Clean.Temp.User" => S("Cli.CatTempUser"),
+                "Clean.Temp.System" => S("Cli.CatTempSystem"),
+                "Clean.Logs.Windows" => S("Cli.CatLogs"),
+                "Clean.Cache.Browsers" => S("Cli.CatBrowsers"),
+                "Clean.Crash.Reports" => S("Cli.CatCrash"),
+                "Clean.Cache.Delivery" => S("Cli.CatDelivery"),
                 _ => text.ResourceKey ?? "—",
             };
         }
@@ -1497,7 +1492,12 @@ namespace Vacate.Cli
         /// </remarks>
         private static string Format(long bytes)
         {
-            string[] units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+            // Сокращения единиц переводятся: «КБ» в английском выводе выглядит
+            // так же чужеродно, как «KB» в русском.
+            string[] units = Strings.IsEnglish
+                ? ["B", "KB", "MB", "GB", "TB"]
+                : ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+
             double value = bytes;
             var unit = 0;
 

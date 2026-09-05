@@ -124,14 +124,14 @@ internal static class CrashHandler
             var message = new StringBuilder()
                 .AppendLine(string.Format(
                     System.Globalization.CultureInfo.CurrentCulture,
-                    Localization.Strings.Get("Crash.Body"),
+                    Vacate.Core.Localization.Strings.Get("Crash.Body"),
                     exception.Message));
 
             if (reportPath is not null)
             {
                 message.AppendLine(string.Format(
                     System.Globalization.CultureInfo.CurrentCulture,
-                    Localization.Strings.Get("Crash.Saved"),
+                    Vacate.Core.Localization.Strings.Get("Crash.Saved"),
                     reportPath));
             }
 

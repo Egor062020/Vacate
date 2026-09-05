@@ -7,7 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using Vacate.Abstractions.Execution;
 using Vacate.Abstractions.Model;
-using Vacate.App.Localization;
+using Vacate.Core.Localization;
 using Vacate.Abstractions.Safety;
 using Vacate.Core.Execution;
 using Vacate.Core.Journal;

@@ -41,16 +41,16 @@ internal sealed class TrayIcon : IDisposable
 
         var menu = new Forms.ContextMenuStrip();
 
-        menu.Items.Add(Localization.Strings.Get("Tray.Open"), null, (_, _) => Show());
-        menu.Items.Add(Localization.Strings.Get("Tray.QuickClean"), null, (_, _) => QuickClean());
+        menu.Items.Add(Vacate.Core.Localization.Strings.Get("Tray.Open"), null, (_, _) => Show());
+        menu.Items.Add(Vacate.Core.Localization.Strings.Get("Tray.QuickClean"), null, (_, _) => QuickClean());
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add(Localization.Strings.Get("Tray.Exit"), null, (_, _) => Application.Current.Shutdown());
+        menu.Items.Add(Vacate.Core.Localization.Strings.Get("Tray.Exit"), null, (_, _) => Application.Current.Shutdown());
 
         _icon = new Forms.NotifyIcon
         {
             Icon = _drawn,
             Visible = true,
-            Text = Localization.Strings.Get("Tray.Tooltip"),
+            Text = Vacate.Core.Localization.Strings.Get("Tray.Tooltip"),
             ContextMenuStrip = menu,
         };
 
@@ -82,7 +82,7 @@ internal sealed class TrayIcon : IDisposable
         if (!File.Exists(executor))
         {
             _icon.ShowBalloonTip(5000, "Vacate",
-                Localization.Strings.Get("Tray.NoCli"), Forms.ToolTipIcon.Warning);
+                Vacate.Core.Localization.Strings.Get("Tray.NoCli"), Forms.ToolTipIcon.Warning);
 
             return;
         }
@@ -97,7 +97,7 @@ internal sealed class TrayIcon : IDisposable
                 CreateNoWindow = true,
             });
 
-            _icon.ShowBalloonTip(4000, "Vacate", Localization.Strings.Get("Tray.Started"), Forms.ToolTipIcon.Info);
+            _icon.ShowBalloonTip(4000, "Vacate", Vacate.Core.Localization.Strings.Get("Tray.Started"), Forms.ToolTipIcon.Info);
         }
         catch (System.ComponentModel.Win32Exception ex)
         {

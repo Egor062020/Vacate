@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using Vacate.App.Localization;
+using Vacate.Core.Localization;
 using Vacate.Platform.Windows.Files;
 using Vacate.Platform.Windows.Registry;
 

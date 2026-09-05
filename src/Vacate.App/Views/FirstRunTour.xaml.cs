@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
-using Vacate.App.Localization;
+using Vacate.Core.Localization;
 
 namespace Vacate.App.Views;
 

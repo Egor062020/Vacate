@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using Vacate.App.Localization;
+using Vacate.Core.Localization;
 using Xunit;
 
 namespace Vacate.Tests.Ui;

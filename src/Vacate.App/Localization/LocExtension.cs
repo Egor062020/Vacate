@@ -1,4 +1,5 @@
 using System.Windows.Markup;
+using Vacate.Core.Localization;
 
 namespace Vacate.App.Localization;
 

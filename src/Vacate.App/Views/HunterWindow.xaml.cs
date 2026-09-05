@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using Vacate.Abstractions.Model;
-using Vacate.App.Localization;
+using Vacate.Core.Localization;
 using Vacate.Platform.Windows.Registry;
 
 namespace Vacate.App.Views;

@@ -4,7 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using Vacate.App.Localization;
+using Vacate.Core.Localization;
 using Vacate.App.Views;
 using Vacate.Platform.Windows.Files;
 

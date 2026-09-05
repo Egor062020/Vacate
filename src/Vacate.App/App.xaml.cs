@@ -11,7 +11,7 @@ public partial class App : Application
         CrashHandler.Install(this);
 
         // Язык выбирается до создания окон: разметка берёт тексты при построении.
-        Localization.Strings.Use(Vacate.Platform.Windows.Files.AppSettings.Load().Language);
+        Vacate.Core.Localization.Strings.Use(Vacate.Platform.Windows.Files.AppSettings.Load().Language);
 
         base.OnStartup(e);
     }
