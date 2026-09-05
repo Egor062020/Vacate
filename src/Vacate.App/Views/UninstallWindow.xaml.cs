@@ -271,8 +271,16 @@ public partial class UninstallWindow : Window
             lines.Add(string.Empty);
             lines.Add("Каталоги лежат в карантине 30 дней. Вернуть их можно командой:");
             lines.Add($"vacate-cli undo {summary.SessionId}");
+        }
+
+        if (summary.RegistryBackupPath is not null)
+        {
+            // Карантин реестр не покрывает, поэтому возврат идёт через файл.
+            // Он открывается двойным щелчком и работает без этой программы.
             lines.Add(string.Empty);
-            lines.Add("Ветки реестра удалены без карантина — так честнее было сказано до нажатия.");
+            lines.Add("Копия удалённых ветвей реестра сохранена:");
+            lines.Add(summary.RegistryBackupPath);
+            lines.Add("Чтобы вернуть их, откройте этот файл двойным щелчком.");
         }
 
         return string.Join(Environment.NewLine, lines);

@@ -6,6 +6,7 @@ using Vacate.Core.Execution;
 using Vacate.Core.Journal;
 using Vacate.Core.Safety;
 using Vacate.Platform.Windows.Files;
+using Vacate.Platform.Windows.Registry;
 
 namespace Vacate.App;
 
@@ -60,6 +61,10 @@ internal static class ElevatedExecution
             return RunSummary.FromElevated(outcome);
         }
 
+        // Ветки реестра карантин не покрывает — их возвращает только выгрузка в файл.
+        // Копия делается ДО удаления: после него сохранять уже нечего.
+        var backup = dryRun ? null : await new RegistryBackup().SaveAsync(plan, ct).ConfigureAwait(false);
+
         var quarantine = new FileSystemQuarantine();
         var journal = new JsonlOperationJournal(JournalDirectory);
         var volumes = new VolumeInfoProvider();
@@ -78,7 +83,7 @@ internal static class ElevatedExecution
 
         var report = await executor.ExecuteAsync(plan, null, ct).ConfigureAwait(false);
 
-        return RunSummary.FromReport(report, dryRun);
+        return RunSummary.FromReport(report, dryRun) with { RegistryBackupPath = backup?.Path };
     }
 }
 
@@ -103,6 +108,9 @@ internal sealed record RunSummary(
     string? Error,
     IReadOnlyList<DiscrepancyReason> Discrepancies)
 {
+    /// <summary>Файл с копией удалённых ветвей реестра, если они были.</summary>
+    public string? RegistryBackupPath { get; init; }
+
     public static RunSummary FromReport(ExecutionReport report, bool dryRun) => new(
         report.Succeeded,
         report.Skipped,
@@ -140,6 +148,9 @@ internal sealed record RunSummary(
 
             // Разбор расхождения через границу процессов не передаётся:
             // придумывать его здесь было бы хуже, чем не показать вовсе.
-            []);
+            [])
+        {
+            RegistryBackupPath = report?.RegistryBackupPath,
+        };
     }
 }

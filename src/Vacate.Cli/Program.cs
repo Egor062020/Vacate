@@ -31,6 +31,7 @@ try
         "health" => Commands.Health(),
         "integrity" => await Commands.IntegrityAsync(
             reportPath: args.SkipWhile(a => a != "--report").Skip(1).FirstOrDefault()),
+        "restore-point" => Commands.CreateRestorePoint(),
         "schedule" => Commands.Schedule(args.Skip(1).ToArray()),
         "--quiet-clean" => await Commands.QuietCleanAsync(),
         "--execute-plan" => await Commands.ExecutePlanAsync(
@@ -83,6 +84,7 @@ namespace Vacate.Cli
                   vacate disk <папка>      куда делось место: крупные файлы, дубли, виды
                   vacate health            состояние дисков
                   vacate integrity         проверка целостности системных файлов
+                  vacate restore-point     создать точку восстановления системы
                   vacate schedule          автоматическая очистка: status | on | off
                   vacate clean --dry-run   полный прогон без единого изменения на диске
                   vacate clean             выполнить очистку
@@ -311,6 +313,20 @@ namespace Vacate.Cli
                 return 5;
             }
 
+            // Ветки реестра карантин не покрывает — их возвращает только выгрузка в файл.
+            var backup = await new RegistryBackup().SaveAsync(plan);
+
+            // Последний рубеж для операций, меняющих устройство системы. Права здесь
+            // уже есть: этот процесс для того и поднят.
+            if (RestorePoint.IsWorthIt(plan))
+            {
+                var point = new RestorePoint().Create("Перед работой Vacate");
+
+                Console.WriteLine(point.Status == RestorePointStatus.Created
+                    ? "Точка восстановления системы создана."
+                    : $"Точка восстановления не создана: {point.Message}");
+            }
+
             var (_, policy) = BuildScanner();
             var quarantine = new FileSystemQuarantine();
             var journal = new JsonlOperationJournal(Path.Combine(DataDirectory, "journal"));
@@ -327,7 +343,7 @@ namespace Vacate.Cli
 
             var report = await executor.ExecuteAsync(plan, null, CancellationToken.None);
 
-            await WriteReportAsync(reportPath, report, null);
+            await WriteReportAsync(reportPath, report, null, backup?.Path);
 
             return report.Failed > 0 ? 1 : 0;
         }
@@ -352,7 +368,11 @@ namespace Vacate.Cli
         public static Task ReportFatalAsync(string? reportPath, Exception exception)
             => WriteReportAsync(reportPath, null, $"Сбой при выполнении плана: {exception.Message}");
 
-        private static async Task WriteReportAsync(string? reportPath, ExecutionReport? report, string? error)
+        private static async Task WriteReportAsync(
+            string? reportPath,
+            ExecutionReport? report,
+            string? error,
+            string? registryBackupPath = null)
         {
             if (string.IsNullOrWhiteSpace(reportPath))
             {
@@ -369,7 +389,8 @@ namespace Vacate.Cli
                     ClaimedBytes: report?.ClaimedBytes ?? 0,
                     ActuallyFreedBytes: report?.ActuallyFreedBytes ?? 0,
                     SessionId: report?.SessionId,
-                    Error: error);
+                    Error: error,
+                    RegistryBackupPath: registryBackupPath);
 
                 await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(payload));
             }
@@ -439,6 +460,23 @@ namespace Vacate.Cli
             {
                 // Отчёт — удобство. Итог уже напечатан в окне.
             }
+        }
+
+        /// <summary>Создать точку восстановления по прямой просьбе.</summary>
+        public static int CreateRestorePoint()
+        {
+            var result = new RestorePoint().Create("Создано вручную через Vacate");
+
+            Console.WriteLine(result.Message);
+
+            if (result.Status == RestorePointStatus.Disabled)
+            {
+                Console.WriteLine();
+                Console.WriteLine("Защита системы включается в свойствах системы:");
+                Console.WriteLine("  Панель управления → Система → Защита системы → Настроить");
+            }
+
+            return result.Status == RestorePointStatus.Created ? 0 : 1;
         }
 
         public static int Health()
@@ -913,6 +951,10 @@ namespace Vacate.Cli
                 return 0;
             }
 
+            // Ветки реестра карантин не покрывает: копия делается до удаления,
+            // после него сохранять уже нечего.
+            var backup = await new RegistryBackup().SaveAsync(plan);
+
             var (_, policy) = BuildScanner();
             var quarantine = new FileSystemQuarantine();
             var journal = new JsonlOperationJournal(Path.Combine(DataDirectory, "journal"));
@@ -935,7 +977,19 @@ namespace Vacate.Cli
             if (report.Succeeded > 0)
             {
                 Console.WriteLine();
-                Console.WriteLine($"Вернуть удалённое: vacate undo {report.SessionId}");
+                Console.WriteLine($"Вернуть удалённые каталоги: vacate undo {report.SessionId}");
+            }
+
+            if (backup?.Path is not null)
+            {
+                Console.WriteLine($"Копия ветвей реестра: {backup.Path}");
+                Console.WriteLine("Чтобы вернуть их, откройте этот файл двойным щелчком.");
+            }
+
+            if (backup is { Failed.Count: > 0 })
+            {
+                // Молчаливый пропуск читался бы как «всё сохранено».
+                Console.WriteLine("Не удалось сохранить копию ветвей: " + string.Join(", ", backup.Failed));
             }
 
             return report.Failed > 0 ? 1 : 0;

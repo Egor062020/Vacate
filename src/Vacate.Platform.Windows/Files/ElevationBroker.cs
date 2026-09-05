@@ -223,6 +223,10 @@ public sealed record ElevationOutcome(bool Success, string Message, ElevatedRunR
 /// </remarks>
 /// <param name="SessionId">Сеанс в журнале: по нему выполняется откат.</param>
 /// <param name="Error">Что помешало, если выполнение не состоялось.</param>
+/// <param name="RegistryBackupPath">
+/// Файл с копией удалённых ветвей реестра. Карантин их не покрывает,
+/// и это единственный способ вернуть удалённое.
+/// </param>
 public sealed record ElevatedRunReport(
     int Succeeded,
     int Skipped,
@@ -231,4 +235,5 @@ public sealed record ElevatedRunReport(
     long ClaimedBytes,
     long ActuallyFreedBytes,
     string? SessionId,
-    string? Error);
+    string? Error,
+    string? RegistryBackupPath = null);
