@@ -25,7 +25,7 @@ try
             args.Skip(1).FirstOrDefault(a => !a.StartsWith("--")),
             silent: args.Contains("--silent"),
             assumeYes: args.Contains("--yes")),
-        "startup" => Commands.Startup(showAll: args.Contains("--all")),
+        "startup" => Commands.Startup(args.Skip(1).ToArray()),
         "extensions" => Commands.Extensions(),
         "disk" => Commands.Disk(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"))),
         "health" => Commands.Health(),
@@ -75,6 +75,7 @@ namespace Vacate.Cli
                   vacate uninstall <имя>   удалить программу и убрать её следы
                   vacate leftovers <имя>   найти следы программы, ничего не удаляя
                   vacate startup           что стартует вместе с Windows (--all: и службы)
+                  vacate startup off <id>  отключить автозапуск (on — включить обратно)
                   vacate extensions        расширения браузеров и их права
                   vacate disk <папка>      куда делось место: крупные файлы, дубли, виды
                   vacate health            состояние дисков
@@ -622,7 +623,71 @@ namespace Vacate.Cli
             return 0;
         }
 
-        public static int Startup(bool showAll)
+        public static int Startup(string[] arguments)
+        {
+            var action = arguments.FirstOrDefault()?.ToLowerInvariant();
+
+            if (action is "on" or "off")
+            {
+                return ToggleStartup(arguments.Skip(1).FirstOrDefault(a => !a.StartsWith("--")), enable: action == "on");
+            }
+
+            return ListStartup(showAll: arguments.Contains("--all"));
+        }
+
+        /// <summary>Переключить одну запись автозапуска.</summary>
+        private static int ToggleStartup(string? id, bool enable)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                Console.WriteLine("Укажите запись: vacate startup off <идентификатор>.");
+                Console.WriteLine("Идентификаторы показывает vacate startup --all.");
+                return 2;
+            }
+
+            var entry = new StartupScanner().Scan()
+                .FirstOrDefault(e => string.Equals(e.Id, id, StringComparison.OrdinalIgnoreCase));
+
+            if (entry is null)
+            {
+                Console.WriteLine($"Запись «{id}» не найдена.");
+                return 1;
+            }
+
+            if (entry.IsEnabled == enable)
+            {
+                Console.WriteLine($"«{entry.Name}» уже {(enable ? "включена" : "отключена")}.");
+                return 0;
+            }
+
+            var outcome = new StartupToggle().Set(entry, enable);
+
+            if (!outcome.Success)
+            {
+                Console.WriteLine(outcome.Message ?? "Не удалось переключить запись.");
+
+                if (StartupToggle.RequiresElevation(entry) && !SystemIntegrityChecker.IsElevated())
+                {
+                    Console.WriteLine("Эта запись общая для всех пользователей — запустите команду от имени администратора.");
+                }
+
+                return 1;
+            }
+
+            Console.WriteLine($"«{entry.Name}» {(enable ? "включена" : "отключена")}.");
+
+            if (entry.Source == StartupSource.Service && !enable)
+            {
+                // Разница существенная, и человек должен о ней знать: иначе решит,
+                // что отключение не сработало, увидев службу работающей.
+                Console.WriteLine("Служба переведена в режим «вручную»: сама при загрузке не стартует,");
+                Console.WriteLine("но программа, которой она нужна, поднимет её по требованию.");
+            }
+
+            return 0;
+        }
+
+        private static int ListStartup(bool showAll)
         {
             var entries = new StartupScanner().Scan();
 
@@ -649,6 +714,13 @@ namespace Vacate.Cli
                     var locked = entry.Control == StartupControl.ViewOnly ? "  [только просмотр]" : string.Empty;
 
                     Console.WriteLine($"  [{state}] {Trim(entry.Name, 38),-38} {scope,-4} {Trim(entry.ImagePath, 46)}{locked}");
+
+                    // Идентификатор нужен для команды переключения, поэтому он виден,
+                    // а не спрятан: иначе командой нельзя воспользоваться.
+                    if (entry.Control == StartupControl.Toggleable)
+                    {
+                        Console.WriteLine($"         id: {entry.Id}");
+                    }
 
                     if (entry.Note is not null)
                     {

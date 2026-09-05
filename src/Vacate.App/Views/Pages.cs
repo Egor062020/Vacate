@@ -67,8 +67,120 @@ public sealed class StartupPage : ListPage
     {
         Configure(
             "Автозагрузка",
-            "Что запускается вместе с Windows. Критичные системные службы показаны, но отключить их нельзя.",
-            LoadAsync);
+            "Выберите запись и нажмите кнопку, чтобы включить или отключить её. Критичные системные службы показаны, но переключить их нельзя.",
+            LoadAsync,
+            extraButtonText: "Включить или отключить",
+            extraAction: ToggleSelectedAsync);
+    }
+
+    /// <summary>
+    /// Переключить выбранную запись.
+    /// </summary>
+    /// <remarks>
+    /// Ничего не удаляется: запись Run помечается в отдельной ветке, ярлык
+    /// переименовывается, служба переводится в режим «вручную». Всё это обратимо
+    /// тем же движением — человек, отключивший автозапуск, обычно хочет
+    /// иметь возможность вернуть его.
+    /// </remarks>
+    private async Task ToggleSelectedAsync()
+    {
+        if (Selected?.Payload is not StartupEntry entry)
+        {
+            return;
+        }
+
+        if (entry.Control == StartupControl.ViewOnly)
+        {
+            MessageBox.Show(
+                entry.Note ?? "Эту запись переключать нельзя: без неё система может перестать работать.",
+                entry.Name,
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        var enable = !entry.IsEnabled;
+        var action = enable ? "включить" : "отключить";
+
+        var message = $"Автозапуск «{entry.Name}» будет {(enable ? "включён" : "отключён")}.\n\n";
+
+        message += entry.Source switch
+        {
+            StartupSource.Service when !enable =>
+                "Служба перейдёт в режим «вручную»: сама при загрузке не стартует, "
+                + "но программа, которой она нужна, поднимет её по требованию.\n\n",
+
+            StartupSource.StartupFolder =>
+                "Ярлык будет переименован, а не удалён — вернуть можно тем же движением.\n\n",
+
+            _ => "Запись не удаляется, а помечается — тем же способом, которым это делает "
+                 + "диспетчер задач. Вернуть можно в любой момент.\n\n",
+        };
+
+        if (StartupToggle.RequiresElevation(entry))
+        {
+            message += "Запись общая для всех пользователей, поэтому Windows запросит права администратора.\n\n";
+        }
+
+        if (MessageBox.Show(message + "Продолжить?", $"Автозагрузка: {action}",
+                MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        var outcome = StartupToggle.RequiresElevation(entry) && !SystemIntegrityChecker.IsElevated()
+            ? await ToggleElevatedAsync(entry, enable)
+            : await Task.Run(() => new StartupToggle().Set(entry, enable));
+
+        if (!outcome.Success && outcome.Message is not null)
+        {
+            MessageBox.Show(outcome.Message, entry.Name, MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        // Список перечитывается в любом случае: показывать прежнее состояние
+        // после попытки его изменить — значит вводить в заблуждение.
+        await LoadAsync();
+    }
+
+    /// <summary>Переключить запись руками отдельного процесса с правами администратора.</summary>
+    private static async Task<ToggleOutcome> ToggleElevatedAsync(StartupEntry entry, bool enable)
+    {
+        var executor = Path.Combine(AppContext.BaseDirectory, "vacate-cli.exe");
+
+        if (!File.Exists(executor))
+        {
+            return ToggleOutcome.Refused("Рядом с программой нет vacate-cli.exe — поставка неполная.");
+        }
+
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = executor,
+                Arguments = $"startup {(enable ? "on" : "off")} \"{entry.Id}\"",
+                UseShellExecute = true,
+                Verb = "runas",
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            });
+
+            if (process is null)
+            {
+                return ToggleOutcome.Refused("Не удалось запустить исполнителя.");
+            }
+
+            await process.WaitForExitAsync();
+
+            return process.ExitCode == 0
+                ? ToggleOutcome.Done(enable)
+                : ToggleOutcome.Refused("Переключить запись не удалось. Подробности — в команде: vacate-cli startup");
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // Отказ в правах — решение человека, а не сбой.
+            return ToggleOutcome.Refused("Вы отказались предоставить права администратора.");
+        }
     }
 
     private static async Task<(IReadOnlyList<ListRow>, string)> LoadAsync(CancellationToken ct)
@@ -80,7 +192,8 @@ public sealed class StartupPage : ListPage
             Subtitle: e.ImagePath ?? e.Command,
             Value: e.IsEnabled ? "включено" : "выключено",
             Badge: e.Control == StartupControl.ViewOnly ? "только просмотр" : DescribeSource(e.Source),
-            Note: e.Note))
+            Note: e.Note,
+            Payload: e))
             .ToList();
 
         var programs = entries.Count(e => e.Source != StartupSource.Service);
@@ -146,8 +259,97 @@ public sealed class DiskPage : ListPage
     {
         Configure(
             "Место на диске",
-            "Куда уходит место в вашей личной папке: крупные файлы и одинаковые копии.",
-            LoadAsync);
+            "Куда уходит место в вашей личной папке. Выберите крупный файл или группу копий и нажмите «Удалить» — всё уйдёт в Корзину.",
+            LoadAsync,
+            extraButtonText: "Удалить выбранное",
+            extraAction: DeleteSelectedAsync);
+    }
+
+    /// <summary>
+    /// Удалить выбранный файл или лишние копии.
+    /// </summary>
+    /// <remarks>
+    /// Единственное место в продукте, где удаляются личные файлы человека, а не служебные.
+    /// Поэтому Корзина вместо карантина: туда он привык заглядывать сам и вернёт файл
+    /// без нашей помощи — даже если программа к тому времени удалена.
+    /// </remarks>
+    private async Task DeleteSelectedAsync()
+    {
+        if (Selected is null)
+        {
+            return;
+        }
+
+        var (plan, description) = Selected.Payload switch
+        {
+            ScannedFile file => (new DiskCleanupPlanBuilder().ForFiles([file]),
+                $"Файл «{Path.GetFileName(file.Path)}» ({Format.Size(file.SizeOnDiskBytes)})"),
+
+            DuplicateGroup group => (new DiskCleanupPlanBuilder().ForDuplicates([group]),
+                $"Лишние копии: {group.Files.Count - 1} шт., освободится {Format.Size(group.RecoverableBytes)}"),
+
+            _ => (null, string.Empty),
+        };
+
+        if (plan is null)
+        {
+            MessageBox.Show(
+                "Эта строка — сводка по виду файлов, а не отдельный файл.\n\n"
+                + "Выберите крупный файл или группу одинаковых копий.",
+                "Удаление",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        if (plan.TotalCount == 0)
+        {
+            MessageBox.Show("Файлы уже исчезли — список устарел. Обновите его.",
+                "Удаление", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            return;
+        }
+
+        var message = description + "\n\n";
+
+        if (Selected.Payload is DuplicateGroup keep)
+        {
+            // Какой файл останется, человек должен знать ДО нажатия.
+            message += $"Останется: {keep.Files[0].Path}\n\n";
+        }
+
+        var inCloud = plan.AllOperations.OfType<DeleteFileOperation>()
+            .Any(o => o.Target.Traits.HasFlag(FileTraits.InCloudFolder));
+
+        if (inCloud)
+        {
+            message += "ВНИМАНИЕ: файл лежит в синхронизируемой папке. Он исчезнет "
+                       + "на всех ваших устройствах, включая телефон, а Корзина вернёт его только здесь.\n\n";
+        }
+
+        message += "Всё удалённое уходит в Корзину.\n\nПродолжить?";
+
+        var confirmed = MessageBox.Show(message, "Удаление файлов",
+            MessageBoxButton.OKCancel, inCloud ? MessageBoxImage.Warning : MessageBoxImage.Question);
+
+        if (confirmed != MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        var summary = await ElevatedExecution.RunAsync(plan, dryRun: false);
+
+        MessageBox.Show(
+            summary.Error is not null && summary.Succeeded == 0
+                ? summary.Error
+                : $"Удалено: {summary.Succeeded}. Освободилось: {Format.Size(summary.ActuallyFreedBytes)}.\n\n"
+                  + "Место вернётся полностью после очистки Корзины.",
+            "Удаление файлов",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+
+        await LoadAsync();
     }
 
     private static async Task<(IReadOnlyList<ListRow>, string)> LoadAsync(CancellationToken ct)
@@ -165,17 +367,30 @@ public sealed class DiskPage : ListPage
 
         foreach (var file in result.LargestFiles.Take(15))
         {
-            rows.Add(new ListRow(Path.GetFileName(file.Path), file.Path, Format.Size(file.SizeOnDiskBytes), "крупный файл"));
+            var synced = file.Traits.HasFlag(FileTraits.InCloudFolder);
+
+            rows.Add(new ListRow(
+                Path.GetFileName(file.Path),
+                file.Path,
+                Format.Size(file.SizeOnDiskBytes),
+                synced ? "в облачной папке" : "крупный файл",
+                synced ? "Удаление уйдёт на все ваши устройства" : null,
+                Payload: file));
         }
 
         foreach (var group in result.Duplicates.Take(10))
         {
+            var synced = group.Files.Any(f => f.Traits.HasFlag(FileTraits.InCloudFolder));
+
             rows.Add(new ListRow(
                 $"{group.Files.Count} одинаковых копии",
                 string.Join("   |   ", group.Files.Select(f => f.Path)),
                 Format.Size(group.RecoverableBytes),
-                "дубликаты",
-                "Освободится столько, если оставить одну копию"));
+                synced ? "копии в облачной папке" : "дубликаты",
+                synced
+                    ? "Освободится столько, если оставить одну копию. Удаление уйдёт на все ваши устройства"
+                    : "Освободится столько, если оставить одну копию",
+                Payload: group));
         }
 
         var status = $"Просмотрено {result.TotalFilesScanned} файлов, {Format.Size(result.TotalBytesScanned)}."
