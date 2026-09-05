@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using Vacate.Abstractions.Execution;
@@ -14,6 +16,7 @@ namespace Vacate.App.Views;
 public partial class CleanPage : UserControl
 {
     private MutationPlan? _plan;
+    private List<GroupRow> _rows = [];
 
     public CleanPage()
     {
@@ -28,12 +31,25 @@ public partial class CleanPage : UserControl
         {
             _plan = await Task.Run(() => BuildScanner().Scan(TempLocation.Standard(), CancellationToken.None));
 
-            GroupsList.ItemsSource = _plan.Groups
+            _rows = _plan.Groups
                 .Select(g => new GroupRow(
+                    g.GroupId,
                     DescribeGroup(g.Title),
-                    g.RootPath ?? string.Empty,
-                    $"{Format.Size(g.SizeOnDiskBytes)}  ·  {g.Operations.Count} шт."))
+                    g.RootPath ?? DescribePaths(g),
+                    $"{Format.Size(g.SizeOnDiskBytes)}  ·  {g.Operations.Count} шт.",
+                    DescribeConsequence(g),
+
+                    // По умолчанию отмечено только безопасное. Кэш браузера человек
+                    // включает сам, прочитав, чем это обернётся.
+                    isChecked: g.MaxDeclaredRisk == RiskLevel.Green))
                 .ToList();
+
+            // Категории, которые окно без прав администратора не может даже перечислить.
+            // Без этой строки они просто не появлялись в списке, и человек считал,
+            // что системного мусора у него нет.
+            _rows.AddRange(await Task.Run(FindUnreadableAsync));
+
+            GroupsList.ItemsSource = _rows;
 
             StatusText.Text = _plan.TotalCount == 0
                 ? "Чисто. Мусор накапливается примерно за неделю."
@@ -48,16 +64,212 @@ public partial class CleanPage : UserControl
         }
     }
 
+    /// <summary>
+    /// Где лежит категория, если каталог не один.
+    /// </summary>
+    /// <remarks>
+    /// Показывается первый путь и число остальных. Голое «каталогов: 10» рядом
+    /// с «10 шт.» читалось как одно и то же число про разные вещи, а перечислять
+    /// шестнадцать путей кэша браузера незачем — они отличаются одним словом.
+    /// </remarks>
+    private static string DescribePaths(OperationGroup group)
+    {
+        var directories = group.Operations
+            .OfType<DeleteFileOperation>()
+            .Select(o => Path.GetDirectoryName(o.Target.Path))
+            .Where(d => !string.IsNullOrEmpty(d))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (directories.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return directories.Count == 1
+            ? directories[0]!
+            : $"{directories[0]}  и ещё {directories.Count - 1}";
+    }
+
+    private static string DescribeConsequence(OperationGroup group) => group.GroupId switch
+    {
+        "cache.browsers" => "Сайты откроются в первый раз заметно медленнее. Пароли и вкладки не тронутся.",
+        "logs.windows" => "Журналы событий системы. Нужны только при разборе неполадок.",
+        "crash.reports" => "Отчёты об уже случившихся сбоях программ.",
+        "cache.delivery" => "Загруженные обновления Windows. При необходимости скачаются заново.",
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// Категории, существующие на машине, но недоступные окну без прав администратора.
+    /// </summary>
+    /// <remarks>
+    /// Системный каталог временных файлов обычному пользователю не отдаёт даже список
+    /// содержимого. Молчаливое отсутствие такой строки читается как «здесь чисто»,
+    /// хотя на деле мы просто не смогли посмотреть.
+    /// </remarks>
+    private static List<GroupRow> FindUnreadableAsync()
+    {
+        var rows = new List<GroupRow>();
+
+        foreach (var location in TempLocation.Standard())
+        {
+            foreach (var path in location.Paths)
+            {
+                if (!Directory.Exists(path))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    // Достаточно одной попытки: если каталог не отдаёт даже первую запись,
+                    // перечислить его целиком мы тем более не сможем.
+                    _ = Directory.EnumerateFileSystemEntries(path).Any();
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    rows.Add(new GroupRow(
+                        location.Id,
+                        DescribeGroup(LocalizedText.FromResource(location.TitleKey)),
+                        path,
+                        "нужны права",
+                        "Окно программы работает без прав администратора и не может сюда заглянуть. "
+                        + "Отметьте — и при очистке Windows запросит права, а работу выполнит отдельный процесс.",
+                        isChecked: false,
+                        needsElevation: true));
+
+                    break;
+                }
+            }
+        }
+
+        return rows;
+    }
+
+    /// <summary>План только из того, что человек оставил отмеченным.</summary>
+    private MutationPlan? SelectedPlan()
+    {
+        if (_plan is null)
+        {
+            return null;
+        }
+
+        var chosen = _rows
+            .Where(r => r.IsChecked && !r.NeedsElevation)
+            .Select(r => r.GroupId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return _plan with { Groups = _plan.Groups.Where(g => chosen.Contains(g.GroupId)).ToList() };
+    }
+
+    /// <summary>
+    /// Очистить категории, которые окно прочитать не может, — руками поднятого процесса.
+    /// </summary>
+    /// <remarks>
+    /// Обычный путь здесь не годится: план строится по списку файлов, а список нам
+    /// не отдают. Поэтому поднятый процесс сканирует и чистит сам, а сюда возвращает отчёт.
+    /// </remarks>
+    private async Task<RunSummary?> CleanUnreadableAsync()
+    {
+        var ids = _rows.Where(r => r.IsChecked && r.NeedsElevation).Select(r => r.GroupId).Distinct().ToList();
+
+        if (ids.Count == 0)
+        {
+            return null;
+        }
+
+        var executor = Path.Combine(AppContext.BaseDirectory, "vacate-cli.exe");
+
+        if (!File.Exists(executor))
+        {
+            return null;
+        }
+
+        var reportPath = Path.Combine(Path.GetTempPath(), $"vacate-clean-{Guid.NewGuid():N}.json");
+
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = executor,
+                Arguments = $"clean --only {string.Join(' ', ids)} --report \"{reportPath}\"",
+                UseShellExecute = true,
+                Verb = "runas",
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            });
+
+            if (process is null)
+            {
+                return null;
+            }
+
+            await process.WaitForExitAsync();
+
+            var report = File.Exists(reportPath)
+                ? JsonSerializer.Deserialize<ElevatedRunReport>(await File.ReadAllTextAsync(reportPath))
+                : null;
+
+            return RunSummary.FromElevated(new ElevationOutcome(process.ExitCode == 0, "Выполнено", report));
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // Отказ в правах — решение человека, а не сбой.
+            return RunSummary.FromElevated(new ElevationOutcome(false, "Вы отказались предоставить права администратора"));
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(reportPath))
+                {
+                    File.Delete(reportPath);
+                }
+            }
+            catch (IOException)
+            {
+                // Останется во временной папке и уйдёт с обычной очисткой.
+            }
+        }
+    }
+
     private async void OnPreview(object sender, RoutedEventArgs e) => await ExecuteAsync(dryRun: true);
 
     private async void OnClean(object sender, RoutedEventArgs e)
     {
-        var message = $"Будет удалено {_plan?.TotalCount ?? 0} объектов, около {Format.Size(_plan?.TotalSizeOnDiskBytes ?? 0)}.\n\n"
-                      + "Это временные файлы и кэши: они создаются заново, но восстановить их будет нельзя.";
+        var plan = SelectedPlan();
+        var hasElevated = _rows.Any(r => r.IsChecked && r.NeedsElevation);
+
+        if ((plan is null || plan.TotalCount == 0) && !hasElevated)
+        {
+            MessageBox.Show(
+                "Не отмечено ни одной категории. Отметьте хотя бы одну — иначе удалять нечего.",
+                "Очистка",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        var message = plan is { TotalCount: > 0 }
+            ? $"Будет удалено {plan.TotalCount} объектов, около {Format.Size(plan.TotalSizeOnDiskBytes)}.\n\n"
+              + "Это временные файлы и кэши: они создаются заново, но восстановить их будет нельзя."
+            : "Отмечены категории, которые окно программы прочитать не может.\n\n"
+              + "Их просканирует и очистит отдельный процесс с правами администратора.";
+
+        // Отмеченные категории перечисляются поимённо: человек должен увидеть,
+        // с чем именно он согласился, а не одну общую цифру.
+        message += "\n\nЧто будет очищено:\n"
+                   + string.Join("\n", _rows.Where(r => r.IsChecked).Select(r => $"  · {r.Title}"));
 
         // Окно системы с запросом прав появляется внезапно, и человек, не понимающий,
         // откуда оно, обычно нажимает «Нет». Предупреждаем заранее.
-        if (_plan is not null && ElevatedExecution.WillAskForRights(_plan, dryRun: false))
+        if (hasElevated || (plan is not null && ElevatedExecution.WillAskForRights(plan, dryRun: false)))
         {
             message += "\n\nЧасть файлов лежит в системных папках, поэтому Windows спросит "
                        + "права администратора. Само окно программы этих прав не получает: "
@@ -79,8 +291,12 @@ public partial class CleanPage : UserControl
 
     private async Task ExecuteAsync(bool dryRun)
     {
-        if (_plan is null)
+        var plan = SelectedPlan();
+        var hasElevated = !dryRun && _rows.Any(r => r.IsChecked && r.NeedsElevation);
+
+        if ((plan is null || plan.TotalCount == 0) && !hasElevated)
         {
+            StatusText.Text = "Не отмечено ни одной категории.";
             return;
         }
 
@@ -88,15 +304,44 @@ public partial class CleanPage : UserControl
 
         try
         {
-            var summary = await ElevatedExecution.RunAsync(_plan, dryRun);
+            var summary = plan is { TotalCount: > 0 }
+                ? await ElevatedExecution.RunAsync(plan, dryRun)
+                : null;
 
-            ShowResult(summary);
+            // Категории, недоступные окну, чистит отдельный процесс. Итоги
+            // складываются: человеку важна общая цифра, а не устройство работы.
+            if (hasElevated && await CleanUnreadableAsync() is { } elevated)
+            {
+                summary = summary is null ? elevated : Merge(summary, elevated);
+            }
+
+            if (summary is not null)
+            {
+                ShowResult(summary);
+            }
         }
         finally
         {
             SetBusy(false, string.Empty);
         }
     }
+
+    private static RunSummary Merge(RunSummary first, RunSummary second) => first with
+    {
+        Succeeded = first.Succeeded + second.Succeeded,
+        Skipped = first.Skipped + second.Skipped,
+        Failed = first.Failed + second.Failed,
+        Denied = first.Denied + second.Denied,
+        ClaimedBytes = first.ClaimedBytes + second.ClaimedBytes,
+        ActuallyFreedBytes = first.ActuallyFreedBytes + second.ActuallyFreedBytes,
+        Elevated = first.Elevated || second.Elevated,
+
+        // Сообщение второго прогона не теряется: отказ в правах должен быть виден,
+        // даже если первая часть работы прошла успешно.
+        Error = first.Error is null
+            ? second.Error
+            : second.Error is null ? first.Error : $"{first.Error}. {second.Error}",
+    };
 
     private void ShowResult(RunSummary summary)
     {
@@ -178,10 +423,44 @@ public partial class CleanPage : UserControl
     {
         "Clean.Temp.User" => "Временные файлы пользователя",
         "Clean.Temp.System" => "Временные файлы системы",
-        _ => title.ResourceKey ?? "Прочее",
+        "Clean.Logs.Windows" => "Журналы Windows",
+        "Clean.Cache.Browsers" => "Кэши браузеров",
+        "Clean.Crash.Reports" => "Отчёты о сбоях программ",
+        "Clean.Cache.Delivery" => "Загруженные обновления Windows",
+        _ => title.Translations?.GetValueOrDefault("ru") ?? title.ResourceKey ?? "Прочее",
     };
 
-    private sealed record GroupRow(string Title, string Path, string SizeText);
+    /// <param name="isChecked">Категория попадёт в очистку. Меняется человеком.</param>
+    /// <param name="needsElevation">
+    /// Окно не смогло заглянуть в каталог: чистить будет отдельный процесс,
+    /// который сам его и просканирует.
+    /// </param>
+    private sealed class GroupRow(
+        string groupId,
+        string title,
+        string path,
+        string sizeText,
+        string consequence,
+        bool isChecked,
+        bool needsElevation = false)
+    {
+        public bool NeedsElevation { get; } = needsElevation;
+
+        public string GroupId { get; } = groupId;
+
+        public string Title { get; } = title;
+
+        public string Path { get; } = path;
+
+        public string SizeText { get; } = sizeText;
+
+        public string Consequence { get; } = consequence;
+
+        public bool IsChecked { get; set; } = isChecked;
+
+        public Visibility ConsequenceVisibility =>
+            string.IsNullOrEmpty(Consequence) ? Visibility.Collapsed : Visibility.Visible;
+    }
 }
 
 /// <summary>Окружение охраны для оболочки.</summary>

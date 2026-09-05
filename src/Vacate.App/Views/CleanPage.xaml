@@ -13,7 +13,7 @@
         <StackPanel Grid.Row="0">
             <TextBlock Style="{StaticResource PageTitle}" Text="Очистка мусора" />
             <TextBlock Style="{StaticResource PageSubtitle}"
-                       Text="Временные файлы и кэши. Файлы моложе суток не трогаются: их может использовать работающая программа." />
+                       Text="Снимите отметку с того, что трогать не нужно. Файлы моложе суток не удаляются в любом случае: их может использовать работающая программа." />
         </StackPanel>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,16">
@@ -32,14 +32,24 @@
                         <DataTemplate>
                             <Grid Margin="0,0,0,12">
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
+
+                                <!-- Отметка решает, попадёт ли категория в очистку.
+                                     Отмечено то, что безопасно; остальное человек включает сам. -->
+                                <CheckBox Grid.Column="0" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                          VerticalAlignment="Top" Margin="0,2,12,0" />
+
+                                <StackPanel Grid.Column="1">
                                     <TextBlock Style="{StaticResource BodyText}" Text="{Binding Title}" />
                                     <TextBlock Style="{StaticResource MonoText}" Text="{Binding Path}" Margin="0,2,0,0" />
+                                    <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding Consequence}"
+                                               Margin="0,3,0,0" Visibility="{Binding ConsequenceVisibility}" />
                                 </StackPanel>
-                                <TextBlock Grid.Column="1" Style="{StaticResource BodyText}" Text="{Binding SizeText}"
+
+                                <TextBlock Grid.Column="2" Style="{StaticResource BodyText}" Text="{Binding SizeText}"
                                            FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
                             </Grid>
                         </DataTemplate>

@@ -33,39 +33,44 @@ public sealed class TempFilesScanner(PathPolicy policy, IQuarantinePathCheck? qu
         {
             ct.ThrowIfCancellationRequested();
 
-            if (!Directory.Exists(location.Path))
-            {
-                continue;
-            }
-
             var operations = new List<PlannedOperation>();
             long totalSize = 0;
             var index = 0;
 
-            foreach (var file in EnumerateFiles(location.Path, ct))
+            foreach (var root in location.Paths)
             {
-                var target = Describe(file);
+                ct.ThrowIfCancellationRequested();
 
-                if (target is null)
+                if (!Directory.Exists(root))
                 {
                     continue;
                 }
 
-                operations.Add(new DeleteFileOperation
+                foreach (var file in EnumerateFiles(root, ct))
                 {
-                    Id = $"{location.Id}-{index++}",
-                    GroupId = location.Id,
-                    DeclaredRisk = location.Risk,
-                    Consequence = LocalizedText.FromResource("Clean.Temp.Consequence"),
-                    Target = target,
+                    var target = Describe(file);
 
-                    // Временные файлы и кэши удаляются безвозвратно, и пользователю
-                    // это говорится прямо. Класть их в карантин бессмысленно: они
-                    // создаются заново, а место при этом не освободилось бы.
-                    Disposition = DeleteDisposition.Permanent,
-                });
+                    if (target is null)
+                    {
+                        continue;
+                    }
 
-                totalSize += target.SizeOnDiskBytes;
+                    operations.Add(new DeleteFileOperation
+                    {
+                        Id = $"{location.Id}-{index++}",
+                        GroupId = location.Id,
+                        DeclaredRisk = location.Risk,
+                        Consequence = LocalizedText.FromResource(location.ConsequenceKey),
+                        Target = target,
+
+                        // Временные файлы и кэши удаляются безвозвратно, и пользователю
+                        // это говорится прямо. Класть их в карантин бессмысленно: они
+                        // создаются заново, а место при этом не освободилось бы.
+                        Disposition = DeleteDisposition.Permanent,
+                    });
+
+                    totalSize += target.SizeOnDiskBytes;
+                }
             }
 
             if (operations.Count > 0)
@@ -74,7 +79,7 @@ public sealed class TempFilesScanner(PathPolicy policy, IQuarantinePathCheck? qu
                 {
                     GroupId = location.Id,
                     Title = LocalizedText.FromResource(location.TitleKey),
-                    RootPath = location.Path,
+                    RootPath = location.RootPath,
                     Operations = operations,
                     SizeOnDiskBytes = totalSize,
                 });
@@ -245,14 +250,43 @@ public sealed class TempFilesScanner(PathPolicy policy, IQuarantinePathCheck? qu
     private static extern uint GetCompressedFileSizeW(string lpFileName, out uint lpFileSizeHigh);
 }
 
-/// <summary>Каталог, подлежащий очистке.</summary>
+/// <summary>
+/// Категория очистки: что чистим и чем это грозит.
+/// </summary>
 /// <param name="Id">Идентификатор группы.</param>
 /// <param name="TitleKey">Ключ названия для показа пользователю.</param>
-/// <param name="Path">Путь.</param>
+/// <param name="Paths">
+/// Каталоги категории. Их несколько: у браузера столько же кэшей, сколько профилей,
+/// и показывать человеку восемь строк «кэш Chrome» вместо одной значит заставить
+/// его разбираться в устройстве чужой программы.
+/// </param>
 /// <param name="Risk">Заявленный уровень риска.</param>
-public sealed record TempLocation(string Id, string TitleKey, string Path, RiskLevel Risk = RiskLevel.Green)
+/// <param name="ConsequenceKey">Что именно человек потеряет. Показывается до нажатия.</param>
+public sealed record TempLocation(
+    string Id,
+    string TitleKey,
+    IReadOnlyList<string> Paths,
+    RiskLevel Risk = RiskLevel.Green,
+    string ConsequenceKey = "Clean.Temp.Consequence")
 {
-    /// <summary>Стандартные временные каталоги.</summary>
+    /// <summary>Категория из одного каталога.</summary>
+    public TempLocation(string id, string titleKey, string path, RiskLevel risk = RiskLevel.Green)
+        : this(id, titleKey, [path], risk)
+    {
+    }
+
+    /// <summary>Общий корень, если каталог один. Нужен охране для дешёвой проверки.</summary>
+    public string? RootPath => Paths.Count == 1 ? Paths[0] : null;
+
+    /// <summary>
+    /// Все категории очистки.
+    /// </summary>
+    /// <remarks>
+    /// Возвращается полный список, а выбор делает человек. Категории с последствиями
+    /// объявлены жёлтыми: удаление кэша браузера ничего не ломает, но первое открытие
+    /// сайтов заметно замедлится, и об этом честнее сказать заранее, чем выслушивать
+    /// потом «после вашей чистки интернет стал медленнее».
+    /// </remarks>
     public static IReadOnlyList<TempLocation> Standard()
     {
         var locations = new List<TempLocation>
@@ -261,13 +295,124 @@ public sealed record TempLocation(string Id, string TitleKey, string Path, RiskL
         };
 
         var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
 
         if (!string.IsNullOrEmpty(windows))
         {
             locations.Add(new TempLocation("temp.system", "Clean.Temp.System", System.IO.Path.Combine(windows, "Temp")));
+            locations.Add(new TempLocation("logs.windows", "Clean.Logs.Windows", System.IO.Path.Combine(windows, "Logs")));
         }
 
+        AddIfAny(locations, "cache.browsers", "Clean.Cache.Browsers", BrowserCachePaths(local, roaming),
+            RiskLevel.Yellow, "Clean.Cache.Browsers.Consequence");
+
+        AddIfAny(locations, "crash.reports", "Clean.Crash.Reports",
+        [
+            System.IO.Path.Combine(local, "CrashDumps"),
+            System.IO.Path.Combine(programData, "Microsoft", "Windows", "WER", "ReportArchive"),
+            System.IO.Path.Combine(programData, "Microsoft", "Windows", "WER", "ReportQueue"),
+        ]);
+
+        AddIfAny(locations, "cache.delivery", "Clean.Cache.Delivery",
+            [System.IO.Path.Combine(local, "Microsoft", "Windows", "DeliveryOptimization", "Cache")]);
+
         return locations;
+    }
+
+    /// <summary>
+    /// Кэши браузеров по всем профилям.
+    /// </summary>
+    /// <remarks>
+    /// Профилей у человека может быть несколько, и называются они не только «Default»:
+    /// «Profile 1», «Profile 2» и так далее. Перечисление идёт по факту, а не по догадке.
+    /// </remarks>
+    private static List<string> BrowserCachePaths(string local, string roaming)
+    {
+        var found = new List<string>();
+
+        // Браузеры на общем движке держат кэш одинаково: <корень>\<профиль>\Cache.
+        var chromiumRoots = new[]
+        {
+            System.IO.Path.Combine(local, "Google", "Chrome", "User Data"),
+            System.IO.Path.Combine(local, "Microsoft", "Edge", "User Data"),
+            System.IO.Path.Combine(local, "Yandex", "YandexBrowser", "User Data"),
+            System.IO.Path.Combine(local, "BraveSoftware", "Brave-Browser", "User Data"),
+            System.IO.Path.Combine(local, "Vivaldi", "User Data"),
+            System.IO.Path.Combine(roaming, "Opera Software", "Opera Stable"),
+        };
+
+        foreach (var root in chromiumRoots)
+        {
+            if (!Directory.Exists(root))
+            {
+                continue;
+            }
+
+            try
+            {
+                foreach (var profile in Directory.GetDirectories(root))
+                {
+                    foreach (var name in (string[])["Cache", "Code Cache", "GPUCache"])
+                    {
+                        var path = System.IO.Path.Combine(profile, name);
+
+                        if (Directory.Exists(path))
+                        {
+                            found.Add(path);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                // Недоступный каталог просто не попадает в список.
+            }
+        }
+
+        // Firefox устроен иначе: профили лежат отдельно, а кэш называется cache2.
+        var firefox = System.IO.Path.Combine(local, "Mozilla", "Firefox", "Profiles");
+
+        if (Directory.Exists(firefox))
+        {
+            try
+            {
+                foreach (var profile in Directory.GetDirectories(firefox))
+                {
+                    var path = System.IO.Path.Combine(profile, "cache2");
+
+                    if (Directory.Exists(path))
+                    {
+                        found.Add(path);
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                // То же самое.
+            }
+        }
+
+        return found;
+    }
+
+    private static void AddIfAny(
+        List<TempLocation> locations,
+        string id,
+        string titleKey,
+        IReadOnlyList<string> candidates,
+        RiskLevel risk = RiskLevel.Green,
+        string consequenceKey = "Clean.Temp.Consequence")
+    {
+        var existing = candidates.Where(Directory.Exists).ToList();
+
+        // Категория, для которой на этой машине ничего нет, в списке не показывается:
+        // пустая строка с нулём заставляет человека гадать, что он сделал не так.
+        if (existing.Count > 0)
+        {
+            locations.Add(new TempLocation(id, titleKey, existing, risk, consequenceKey));
+        }
     }
 }
 

@@ -204,6 +204,56 @@
         </Style.Triggers>
     </Style>
 
+    <!--
+        Отметка. Системная выглядит светлым квадратом на тёмной подложке и выдаёт
+        интерфейс, собранный из чужих деталей, — а отметка здесь решает, будут ли
+        удалены файлы, и должна читаться однозначно.
+    -->
+    <Style TargetType="CheckBox">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid>
+                        <Border x:Name="Box" Width="17" Height="17"
+                                CornerRadius="4"
+                                Background="Transparent"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1.5" />
+
+                        <!-- Галочка рисуется линиями: значок из шрифта зависел бы
+                             от того, что установлено на машине пользователя. -->
+                        <Path x:Name="Check"
+                              Data="M 4 8.5 L 7 11.5 L 13 5"
+                              Stroke="{StaticResource TextPrimaryBrush}"
+                              StrokeThickness="2"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              StrokeLineJoin="Round"
+                              Opacity="0" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Box" Property="Background" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Check" Property="Opacity" Value="1" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource TextSecondaryBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Box" Property="Opacity" Value="0.45" />
+                            <Setter TargetName="Check" Property="Opacity" Value="0.45" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource TextPrimaryBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Полоса прокрутки в тон интерфейсу -->
     <Style TargetType="ScrollBar">
         <Setter Property="Width" Value="8" />

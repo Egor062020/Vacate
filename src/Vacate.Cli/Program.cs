@@ -36,7 +36,10 @@ try
         "--execute-plan" => await Commands.ExecutePlanAsync(
             args.Skip(1).FirstOrDefault(a => !a.StartsWith("--")),
             reportPath: args.SkipWhile(a => a != "--report").Skip(1).FirstOrDefault()),
-        "clean" => await Commands.CleanAsync(dryRun: args.Contains("--dry-run")),
+        "clean" => await Commands.CleanAsync(
+            dryRun: args.Contains("--dry-run"),
+            only: args.SkipWhile(a => a != "--only").Skip(1).TakeWhile(a => !a.StartsWith("--")).ToArray(),
+            reportPath: args.SkipWhile(a => a != "--report").Skip(1).FirstOrDefault()),
         "history" => await Commands.HistoryAsync(),
         "undo" => await Commands.UndoAsync(args.Skip(1).FirstOrDefault()),
         _ => Commands.Help(),
@@ -1034,14 +1037,30 @@ namespace Vacate.Cli
             return value.Length <= length ? value : value[..(length - 1)] + "…";
         }
 
-        public static async Task<int> CleanAsync(bool dryRun)
+        /// <summary>
+        /// Очистка временных файлов.
+        /// </summary>
+        /// <param name="dryRun">Полный прогон без единого изменения на диске.</param>
+        /// <param name="only">
+        /// Идентификаторы категорий. Пустой список означает все. Ключ нужен интерфейсу:
+        /// системные каталоги он без прав администратора даже перечислить не может,
+        /// поэтому просит поднятый процесс просканировать и очистить их самому.
+        /// </param>
+        /// <param name="reportPath">Куда положить итог для вызывающего.</param>
+        public static async Task<int> CleanAsync(bool dryRun, string[]? only = null, string? reportPath = null)
         {
             var (scanner, policy) = BuildScanner();
-            var plan = scanner.Scan(TempLocation.Standard(), CancellationToken.None);
+
+            var locations = only is { Length: > 0 }
+                ? TempLocation.Standard().Where(l => only.Contains(l.Id, StringComparer.OrdinalIgnoreCase)).ToList()
+                : TempLocation.Standard();
+
+            var plan = scanner.Scan(locations, CancellationToken.None);
 
             if (plan.TotalCount == 0)
             {
                 Console.WriteLine("Чисто, делать нечего.");
+                await WriteReportAsync(reportPath, null, null);
                 return 0;
             }
 
@@ -1078,6 +1097,8 @@ namespace Vacate.Cli
             Console.WriteLine();
             Console.WriteLine();
             PrintReport(report);
+
+            await WriteReportAsync(reportPath, report, null);
 
             return report.Cancelled ? 130 : 0;
         }
@@ -1230,6 +1251,10 @@ namespace Vacate.Cli
             {
                 "Clean.Temp.User" => "Временные файлы пользователя",
                 "Clean.Temp.System" => "Временные файлы системы",
+                "Clean.Logs.Windows" => "Журналы Windows",
+                "Clean.Cache.Browsers" => "Кэши браузеров",
+                "Clean.Crash.Reports" => "Отчёты о сбоях программ",
+                "Clean.Cache.Delivery" => "Загруженные обновления Windows",
                 _ => text.ResourceKey ?? "—",
             };
         }
