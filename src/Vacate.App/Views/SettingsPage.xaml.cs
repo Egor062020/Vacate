@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using Vacate.App.Localization;
 using Vacate.Platform.Windows.Files;
 using Vacate.Platform.Windows.Registry;
 
@@ -40,6 +41,9 @@ public partial class SettingsPage : UserControl
         {
             var settings = AppSettings.Load();
 
+            LanguageEnglish.IsChecked = Strings.IsEnglish;
+            LanguageRussian.IsChecked = !Strings.IsEnglish;
+
             UpdatesEnabled.IsChecked = settings.CheckForUpdates;
             TrayEnabled.IsChecked = settings.ShowTrayIcon;
             MinimizeToTray.IsChecked = settings.MinimizeToTray;
@@ -50,20 +54,21 @@ public partial class SettingsPage : UserControl
             if (!state.Enabled)
             {
                 ScheduleOff.IsChecked = true;
-                ScheduleStatus.Text = "Сейчас выключена.";
+                ScheduleStatus.Text = Strings.Get("Settings.ScheduleOffNow");
             }
             else
             {
-                // Какая именно частота выбрана, планировщик сообщает описанием;
-                // еженедельная — то, что предлагается по умолчанию.
-                var monthly = state.Frequency?.Contains("месяц", StringComparison.OrdinalIgnoreCase) == true;
+                // Частота приходит значением, а не текстом. Раньше здесь искалось
+                // слово «месяц» в человеческом описании — при переводе интерфейса
+                // такая проверка перестала бы работать молча.
+                var monthly = state.Frequency == ScheduleFrequency.Monthly;
 
                 ScheduleMonthly.IsChecked = monthly;
                 ScheduleWeekly.IsChecked = !monthly;
 
                 ScheduleStatus.Text = state.NextRun is { } next
-                    ? $"Включена. Следующий запуск: {next:dd.MM.yyyy HH:mm}"
-                    : "Включена.";
+                    ? $"{Strings.Get("Settings.ScheduleOnNow")} {Strings.Get("Settings.NextRun")} {next:dd.MM.yyyy HH:mm}"
+                    : Strings.Get("Settings.ScheduleOnNow");
             }
         }
         finally
@@ -88,7 +93,7 @@ public partial class SettingsPage : UserControl
 
         if (!File.Exists(executor))
         {
-            ScheduleStatus.Text = "Рядом с программой нет vacate-cli.exe — поставка неполная.";
+            ScheduleStatus.Text = Strings.Get("Settings.NoCli");
             return;
         }
 
@@ -105,7 +110,7 @@ public partial class SettingsPage : UserControl
 
             if (state.NextRun is { } next)
             {
-                ScheduleStatus.Text += $" Следующий запуск: {next:dd.MM.yyyy HH:mm}";
+                ScheduleStatus.Text += $" {Strings.Get("Settings.NextRun")} {next:dd.MM.yyyy HH:mm}";
             }
         }
     }
@@ -140,6 +145,24 @@ public partial class SettingsPage : UserControl
         TrayPreferenceChanged?.Invoke(show);
     }
 
+    /// <summary>
+    /// Запомнить выбранный язык.
+    /// </summary>
+    /// <remarks>
+    /// Применяется при следующем запуске: разметка берёт тексты при построении окна,
+    /// и живая смена языка потребовала бы уведомлений на каждую надпись ради
+    /// возможности, которой пользуются раз в жизни. О перезапуске сказано рядом.
+    /// </remarks>
+    private void OnLanguageChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        (AppSettings.Load() with { Language = LanguageEnglish.IsChecked == true ? "en" : "ru" }).Save();
+    }
+
     private void OnUpdateSettingChanged(object sender, RoutedEventArgs e)
     {
         if (_loading)
@@ -156,7 +179,7 @@ public partial class SettingsPage : UserControl
 
         if (stores.Count == 0)
         {
-            MessageBox.Show("Карантин пуст: возвращать нечего.", "Карантин",
+            MessageBox.Show(Strings.Get("Settings.QuarantineEmpty"), Strings.Get("Settings.Rollback"),
                 MessageBoxButton.OK, MessageBoxImage.Information);
 
             return;
@@ -169,7 +192,7 @@ public partial class SettingsPage : UserControl
     {
         if (!Directory.Exists(RegistryBackup.Directory))
         {
-            MessageBox.Show("Копий ветвей реестра ещё не создавалось.", "Копии реестра",
+            MessageBox.Show(Strings.Get("Settings.NoBackups"), Strings.Get("Settings.OpenBackups"),
                 MessageBoxButton.OK, MessageBoxImage.Information);
 
             return;

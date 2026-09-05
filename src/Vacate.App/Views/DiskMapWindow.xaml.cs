@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Vacate.App.Localization;
 using Vacate.Platform.Windows.Files;
 
 namespace Vacate.App.Views;
@@ -71,7 +72,7 @@ public partial class DiskMapWindow : Window
         {
             MapCanvas.Children.Add(new TextBlock
             {
-                Text = "Здесь пусто или содержимое недоступно.",
+                Text = Strings.Get("Map.Empty"),
                 Style = (Style)FindResource("SecondaryText"),
                 Margin = new Thickness(12),
             });
@@ -114,17 +115,17 @@ public partial class DiskMapWindow : Window
             return;
         }
 
-        var text = $"Всего {Format.Size(_map.TotalBytes)} в {_map.Entries.Count} объектах.";
+        var text = Format.Text("Map.Total", Format.Size(_map.TotalBytes), _map.Entries.Count);
 
         if (_map.SkippedCount > 0)
         {
-            text += $" Не удалось прочитать: {_map.SkippedCount} — их место в подсчёт не вошло.";
+            text += Format.Text("Map.Unreadable", _map.SkippedCount);
         }
 
         if (hidden > 0)
         {
             // Скрытое должно быть названо: молчаливый пропуск читается как «этого нет».
-            text += $" Слишком мелкие, чтобы показать их на карте: {hidden}.";
+            text += Format.Text("Map.TooSmall", hidden);
         }
 
         StatusText.Text = text;

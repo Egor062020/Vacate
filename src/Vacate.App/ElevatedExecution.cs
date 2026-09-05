@@ -143,7 +143,7 @@ internal sealed record RunSummary(
             // человек должен понимать, что цифры не дошли, а не думать,
             // что работа была впустую.
             Error: outcome.Success
-                ? report is null ? "Работа выполнена, но подробности от поднятого процесса не дошли" : null
+                ? report is null ? Localization.Strings.Get("Elevated.NoReport") : null
                 : outcome.Message,
 
             // Разбор расхождения через границу процессов не передаётся:

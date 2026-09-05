@@ -1,3 +1,6 @@
+using System.Globalization;
+using Vacate.App.Localization;
+
 namespace Vacate.App.Views;
 
 /// <summary>Единое форматирование величин для всего интерфейса.</summary>
@@ -7,6 +10,10 @@ namespace Vacate.App.Views;
 /// </remarks>
 public static class Format
 {
+    /// <summary>Переведённый текст с подстановками.</summary>
+    public static string Text(string key, params object?[] args) =>
+        string.Format(CultureInfo.CurrentCulture, Strings.Get(key), args);
+
     /// <summary>
     /// Объём в двоичных единицах — как в проводнике Windows.
     /// </summary>
@@ -16,7 +23,12 @@ public static class Format
     /// </remarks>
     public static string Size(long bytes)
     {
-        string[] units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+        // Сокращения единиц переводятся: «КБ» в английском интерфейсе выглядит
+        // так же чужеродно, как «KB» в русском.
+        string[] units = Strings.IsEnglish
+            ? ["B", "KB", "MB", "GB", "TB"]
+            : ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+
         double value = bytes;
         var unit = 0;
 
@@ -26,7 +38,7 @@ public static class Format
             unit++;
         }
 
-        return unit == 0 ? $"{bytes} Б" : $"{value:0.##} {units[unit]}";
+        return unit == 0 ? $"{bytes} {units[0]}" : $"{value:0.##} {units[unit]}";
     }
 
     /// <summary>Сократить длинную строку с многоточием.</summary>

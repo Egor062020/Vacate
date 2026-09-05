@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
+using Vacate.App.Localization;
 
 namespace Vacate.App.Views;
 
@@ -18,38 +19,10 @@ public partial class FirstRunTour : Window
 {
     private static readonly TourStep[] Steps =
     [
-        new("Ничего не исчезнет само",
-            "Vacate сначала показывает, что нашла, и ждёт вашего решения. Ни одна кнопка "
-            + "не удаляет файлы сразу: сперва список, потом подтверждение, и только потом работа.\n\n"
-            + "В разделе «Очистка мусора» есть кнопка «Показать, что будет сделано». Она проходит "
-            + "весь путь до конца, но не меняет на диске ни байта.",
-            "Начните с неё, если сомневаетесь. Пробный прогон ничего не ломает — это его назначение."),
-
-        new("Удалённое можно вернуть",
-            "Папки удалённых программ не стираются, а перекладываются в служебное хранилище "
-            + "и лежат там 30 дней. Ваши файлы — крупные и одинаковые копии — уходят в Корзину, "
-            + "откуда вы вернёте их привычным способом.\n\n"
-            + "Ветви реестра сохраняются в файл перед удалением: он открывается двойным щелчком "
-            + "и возвращает всё на место.",
-            "Временные файлы и кэши — исключение: они удаляются насовсем. Они создаются заново, "
-            + "и хранить их копии значило бы не освободить ни мегабайта."),
-
-        new("Цифры честные",
-            "После работы показываются две величины: сколько удалено и сколько на самом деле "
-            + "освободилось. Они часто различаются — файл держит работающая программа, или "
-            + "удалённое ждёт в Корзине.\n\n"
-            + "Разница объясняется построчно, а не прячется.",
-            "Если очистка не дала результата, программа скажет об этом прямо, а не припишет себе "
-            + "чужие гигабайты."),
-
-        new("Куда нажимать",
-            "Слева разделы. «Очистка мусора» — временные файлы, самое безопасное. «Программы» — "
-            + "удаление вместе со следами, которые деинсталлятор оставил после себя. "
-            + "«Автозагрузка» — то, что стартует вместе с Windows.\n\n"
-            + "«Место на диске» покажет, куда оно ушло, а кнопка «Показать картой» — как это "
-            + "соотносится между собой. В «Настройках» включается автоматическая очистка "
-            + "и значок рядом с часами.",
-            "Красным помечено то, что требует внимания. Серым — то, что программа трогать не станет."),
+        new("Tour.1.Title", "Tour.1.Body", "Tour.1.Aside"),
+        new("Tour.2.Title", "Tour.2.Body", "Tour.2.Aside"),
+        new("Tour.3.Title", "Tour.3.Body", "Tour.3.Aside"),
+        new("Tour.4.Title", "Tour.4.Body", "Tour.4.Aside"),
     ];
 
     private int _index;
@@ -67,12 +40,17 @@ public partial class FirstRunTour : Window
 
         var step = Steps[index];
 
-        StepNumber.Text = $"{index + 1} из {Steps.Length}";
-        StepTitle.Text = step.Title;
-        StepBody.Text = step.Body;
-        StepAsideText.Text = step.Aside;
+        StepNumber.Text = string.Format(
+            System.Globalization.CultureInfo.CurrentCulture,
+            Strings.Get("Tour.StepOf"),
+            index + 1,
+            Steps.Length);
 
-        NextButton.Content = index == Steps.Length - 1 ? "Понятно" : "Дальше";
+        StepTitle.Text = Strings.Get(step.TitleKey);
+        StepBody.Text = Strings.Get(step.BodyKey);
+        StepAsideText.Text = Strings.Get(step.AsideKey);
+
+        NextButton.Content = Strings.Get(index == Steps.Length - 1 ? "Tour.Done" : "Tour.Next");
         SkipButton.Visibility = index == Steps.Length - 1 ? Visibility.Collapsed : Visibility.Visible;
 
         // Пройденное закрашено, оставшееся приглушено: сколько ещё осталось,
@@ -97,5 +75,5 @@ public partial class FirstRunTour : Window
 
     private void OnSkip(object sender, RoutedEventArgs e) => Close();
 
-    private sealed record TourStep(string Title, string Body, string Aside);
+    private sealed record TourStep(string TitleKey, string BodyKey, string AsideKey);
 }

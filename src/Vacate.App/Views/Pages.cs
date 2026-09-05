@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using Vacate.Abstractions.Model;
+using Vacate.App.Localization;
 using Vacate.Platform.Windows.Files;
 using Vacate.Platform.Windows.Registry;
 
@@ -14,17 +15,17 @@ public sealed class AppsPage : ListPage
     public AppsPage()
     {
         Configure(
-            "Программы",
-            "Выберите программу и нажмите «Удалить». Несколько сразу — с зажатой клавишей Ctrl: тогда они удалятся одна за другой.",
+            Strings.Get("Apps.Title"),
+            Strings.Get("Apps.Subtitle"),
             LoadAsync,
-            extraButtonText: "Удалить программу",
+            extraButtonText: Strings.Get("Apps.Uninstall"),
             extraAction: UninstallSelectedAsync);
 
         AllowMultipleSelection();
 
         // Программу, которой не видно в списке, ищут по её окну: в списке она
         // называется так, как её назвал издатель, а не так, как написано в окне.
-        AddSecondaryAction("Найти по окну", OpenHunter);
+        AddSecondaryAction(Strings.Get("Apps.Hunt"), OpenHunter);
     }
 
     private void OpenHunter()
@@ -41,15 +42,15 @@ public sealed class AppsPage : ListPage
         var rows = apps.Select(app => new ListRow(
             Title: app.DisplayName,
             Subtitle: app.Publisher ?? string.Empty,
-            Value: app.EstimatedSizeBytes > 0 ? Format.Size(app.EstimatedSizeBytes) : "размер неизвестен",
-            Badge: app.LooksLikeRuntime ? "нужна другим" : app.Scope == InstallScope.User ? "только для вас" : null,
-            Note: app.CanUninstall ? null : "Программа не сообщила системе, как её удалять",
+            Value: app.EstimatedSizeBytes > 0 ? Format.Size(app.EstimatedSizeBytes) : Strings.Get("Apps.UnknownSize"),
+            Badge: app.LooksLikeRuntime ? Strings.Get("Apps.Runtime") : app.Scope == InstallScope.User ? Strings.Get("Apps.UserOnly") : null,
+            Note: app.CanUninstall ? null : Strings.Get("Apps.NoUninstallCommand"),
             Payload: app))
             .ToList();
 
         var runtimes = apps.Count(a => a.LooksLikeRuntime);
 
-        return (rows, $"Всего {apps.Count}, из них сред выполнения {runtimes}. Размер указан самой программой и часто занижен.");
+        return (rows, Format.Text("Apps.Status", apps.Count, runtimes));
     }
 
     /// <summary>
@@ -73,12 +74,11 @@ public sealed class AppsPage : ListPage
         if (apps.Count > 1)
         {
             var confirmed = MessageBox.Show(
-                $"Выбрано программ: {apps.Count}.\n\n"
-                + string.Join("\n", apps.Select(a => $"  · {a.DisplayName}"))
-                + "\n\nОни будут удалены по очереди: для каждой откроется своё окно, "
-                + "и каждый деинсталлятор задаст свои вопросы.\n\n"
-                + "Прервать можно в любой момент — отменённые останутся на месте.\n\nПродолжить?",
-                "Удаление нескольких программ",
+                Format.Text(
+                    "Apps.BatchBody",
+                    apps.Count,
+                    string.Join("\n", apps.Select(a => $"  · {a.DisplayName}"))),
+                Strings.Get("Apps.BatchTitle"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Warning);
 
@@ -108,10 +108,10 @@ public sealed class StartupPage : ListPage
     public StartupPage()
     {
         Configure(
-            "Автозагрузка",
-            "Выберите запись и нажмите кнопку, чтобы включить или отключить её. Критичные системные службы показаны, но переключить их нельзя.",
+            Strings.Get("Startup.Title"),
+            Strings.Get("Startup.Subtitle"),
             LoadAsync,
-            extraButtonText: "Включить или отключить",
+            extraButtonText: Strings.Get("Startup.Toggle"),
             extraAction: ToggleSelectedAsync);
     }
 
@@ -134,7 +134,7 @@ public sealed class StartupPage : ListPage
         if (entry.Control == StartupControl.ViewOnly)
         {
             MessageBox.Show(
-                entry.Note ?? "Эту запись переключать нельзя: без неё система может перестать работать.",
+                entry.Note ?? Strings.Get("Startup.CannotToggle"),
                 entry.Name,
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -143,29 +143,23 @@ public sealed class StartupPage : ListPage
         }
 
         var enable = !entry.IsEnabled;
-        var action = enable ? "включить" : "отключить";
+        var action = Strings.Get(enable ? "Startup.TurnOn" : "Startup.TurnOff");
 
-        var message = $"Автозапуск «{entry.Name}» будет {(enable ? "включён" : "отключён")}.\n\n";
+        var message = Format.Text(enable ? "Startup.WillBeOn" : "Startup.WillBeOff", entry.Name);
 
         message += entry.Source switch
         {
-            StartupSource.Service when !enable =>
-                "Служба перейдёт в режим «вручную»: сама при загрузке не стартует, "
-                + "но программа, которой она нужна, поднимет её по требованию.\n\n",
-
-            StartupSource.StartupFolder =>
-                "Ярлык будет переименован, а не удалён — вернуть можно тем же движением.\n\n",
-
-            _ => "Запись не удаляется, а помечается — тем же способом, которым это делает "
-                 + "диспетчер задач. Вернуть можно в любой момент.\n\n",
+            StartupSource.Service when !enable => Strings.Get("Startup.ServiceNote"),
+            StartupSource.StartupFolder => Strings.Get("Startup.ShortcutNote"),
+            _ => Strings.Get("Startup.RegistryNote"),
         };
 
         if (StartupToggle.RequiresElevation(entry))
         {
-            message += "Запись общая для всех пользователей, поэтому Windows запросит права администратора.\n\n";
+            message += Strings.Get("Startup.ElevationNote");
         }
 
-        if (MessageBox.Show(message + "Продолжить?", $"Автозагрузка: {action}",
+        if (MessageBox.Show(message + Strings.Get("Common.Continue"), Format.Text("Startup.ConfirmTitle", action),
                 MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
         {
             return;
@@ -192,7 +186,7 @@ public sealed class StartupPage : ListPage
 
         if (!File.Exists(executor))
         {
-            return ToggleOutcome.Refused("Рядом с программой нет vacate-cli.exe — поставка неполная.");
+            return ToggleOutcome.Refused(Strings.Get("Settings.NoCli"));
         }
 
         try
@@ -209,19 +203,19 @@ public sealed class StartupPage : ListPage
 
             if (process is null)
             {
-                return ToggleOutcome.Refused("Не удалось запустить исполнителя.");
+                return ToggleOutcome.Refused(Strings.Get("Startup.NoExecutor"));
             }
 
             await process.WaitForExitAsync();
 
             return process.ExitCode == 0
                 ? ToggleOutcome.Done(enable)
-                : ToggleOutcome.Refused("Переключить запись не удалось. Подробности — в команде: vacate-cli startup");
+                : ToggleOutcome.Refused(Strings.Get("Startup.ToggleFailed"));
         }
         catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
             // Отказ в правах — решение человека, а не сбой.
-            return ToggleOutcome.Refused("Вы отказались предоставить права администратора.");
+            return ToggleOutcome.Refused(Strings.Get("Startup.RightsRefused"));
         }
     }
 
@@ -232,8 +226,8 @@ public sealed class StartupPage : ListPage
         var rows = entries.Select(e => new ListRow(
             Title: e.Name,
             Subtitle: e.ImagePath ?? e.Command,
-            Value: e.IsEnabled ? "включено" : "выключено",
-            Badge: e.Control == StartupControl.ViewOnly ? "только просмотр" : DescribeSource(e.Source),
+            Value: e.IsEnabled ? Strings.Get("Startup.Enabled") : Strings.Get("Startup.Disabled"),
+            Badge: e.Control == StartupControl.ViewOnly ? Strings.Get("Startup.ViewOnly") : DescribeSource(e.Source),
             Note: e.Note,
             Payload: e))
             .ToList();
@@ -241,15 +235,15 @@ public sealed class StartupPage : ListPage
         var programs = entries.Count(e => e.Source != StartupSource.Service);
         var services = entries.Count - programs;
 
-        return (rows, $"Программ {programs}, служб {services}.");
+        return (rows, Format.Text("Startup.Status", programs, services));
     }
 
     private static string DescribeSource(StartupSource source) => source switch
     {
-        StartupSource.RunKey => "реестр",
-        StartupSource.StartupFolder => "папка автозагрузки",
-        StartupSource.ScheduledTask => "задача",
-        _ => "служба",
+        StartupSource.RunKey => Strings.Get("Startup.SourceRegistry"),
+        StartupSource.StartupFolder => Strings.Get("Startup.SourceFolder"),
+        StartupSource.ScheduledTask => Strings.Get("Startup.SourceTask"),
+        _ => Strings.Get("Startup.SourceService"),
     };
 }
 
@@ -259,8 +253,8 @@ public sealed class ExtensionsPage : ListPage
     public ExtensionsPage()
     {
         Configure(
-            "Расширения браузеров",
-            "Главное здесь — какие права расширение себе выпросило. Отключение делается в самом браузере: правку его настроек извне он отменяет при запуске.",
+            Strings.Get("Extensions.Title"),
+            Strings.Get("Extensions.Subtitle"),
             LoadAsync);
     }
 
@@ -280,15 +274,15 @@ public sealed class ExtensionsPage : ListPage
                 Title: e.Name,
                 Subtitle: $"{e.Browser} · {e.ProfileName}",
                 Value: e.SizeBytes > 0 ? Format.Size(e.SizeBytes) : string.Empty,
-                Badge: e.ReadsAllSites ? "читает все сайты" : null,
+                Badge: e.ReadsAllSites ? Strings.Get("Extensions.ReadsAllSites") : null,
                 Note: string.Join("  ·  ", notable));
         }).ToList();
 
         var dangerous = extensions.Count(e => e.ReadsAllSites);
 
         var status = dangerous > 0
-            ? $"Всего {extensions.Count}. С доступом ко всем сайтам: {dangerous} — такое расширение видит всё, что вы открываете."
-            : $"Всего {extensions.Count}. Расширений с доступом ко всем сайтам нет.";
+            ? Format.Text("Extensions.StatusDangerous", extensions.Count, dangerous)
+            : Format.Text("Extensions.StatusSafe", extensions.Count);
 
         return (rows, status);
     }
@@ -300,15 +294,15 @@ public sealed class DiskPage : ListPage
     public DiskPage()
     {
         Configure(
-            "Место на диске",
-            "Куда уходит место в вашей личной папке. Выберите крупный файл или группу копий и нажмите «Удалить» — всё уйдёт в Корзину.",
+            Strings.Get("Disk.Title"),
+            Strings.Get("Disk.Subtitle"),
             LoadAsync,
-            extraButtonText: "Удалить выбранное",
+            extraButtonText: Strings.Get("Disk.Delete"),
             extraAction: DeleteSelectedAsync);
 
         // Список говорит, что самое большое; карта — как это соотносится
         // между собой. Второй вопрос человек задаёт себе первым.
-        AddSecondaryAction("Показать картой", OpenMap);
+        AddSecondaryAction(Strings.Get("Disk.ShowMap"), OpenMap);
     }
 
     private void OpenMap()
@@ -338,10 +332,10 @@ public sealed class DiskPage : ListPage
         var (plan, description) = Selected.Payload switch
         {
             ScannedFile file => (new DiskCleanupPlanBuilder().ForFiles([file]),
-                $"Файл «{Path.GetFileName(file.Path)}» ({Format.Size(file.SizeOnDiskBytes)})"),
+                Format.Text("Disk.OneFile", Path.GetFileName(file.Path), Format.Size(file.SizeOnDiskBytes))),
 
             DuplicateGroup group => (new DiskCleanupPlanBuilder().ForDuplicates([group]),
-                $"Лишние копии: {group.Files.Count - 1} шт., освободится {Format.Size(group.RecoverableBytes)}"),
+                Format.Text("Disk.ExtraCopies", group.Files.Count - 1, Format.Size(group.RecoverableBytes))),
 
             _ => (null, string.Empty),
         };
@@ -349,9 +343,8 @@ public sealed class DiskPage : ListPage
         if (plan is null)
         {
             MessageBox.Show(
-                "Эта строка — сводка по виду файлов, а не отдельный файл.\n\n"
-                + "Выберите крупный файл или группу одинаковых копий.",
-                "Удаление",
+                Strings.Get("Disk.NotAFile"),
+                Strings.Get("Disk.DeleteTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
 
@@ -360,8 +353,8 @@ public sealed class DiskPage : ListPage
 
         if (plan.TotalCount == 0)
         {
-            MessageBox.Show("Файлы уже исчезли — список устарел. Обновите его.",
-                "Удаление", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(Strings.Get("Disk.ListStale"),
+                Strings.Get("Disk.DeleteTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
 
             return;
         }
@@ -371,7 +364,7 @@ public sealed class DiskPage : ListPage
         if (Selected.Payload is DuplicateGroup keep)
         {
             // Какой файл останется, человек должен знать ДО нажатия.
-            message += $"Останется: {keep.Files[0].Path}\n\n";
+            message += Format.Text("Disk.WillKeep", keep.Files[0].Path);
         }
 
         var inCloud = plan.AllOperations.OfType<DeleteFileOperation>()
@@ -379,13 +372,12 @@ public sealed class DiskPage : ListPage
 
         if (inCloud)
         {
-            message += "ВНИМАНИЕ: файл лежит в синхронизируемой папке. Он исчезнет "
-                       + "на всех ваших устройствах, включая телефон, а Корзина вернёт его только здесь.\n\n";
+            message += Strings.Get("Disk.CloudWarning");
         }
 
-        message += "Всё удалённое уходит в Корзину.\n\nПродолжить?";
+        message += Strings.Get("Disk.ToRecycleBin");
 
-        var confirmed = MessageBox.Show(message, "Удаление файлов",
+        var confirmed = MessageBox.Show(message, Strings.Get("Disk.DeleteTitle"),
             MessageBoxButton.OKCancel, inCloud ? MessageBoxImage.Warning : MessageBoxImage.Question);
 
         if (confirmed != MessageBoxResult.OK)
@@ -398,9 +390,8 @@ public sealed class DiskPage : ListPage
         MessageBox.Show(
             summary.Error is not null && summary.Succeeded == 0
                 ? summary.Error
-                : $"Удалено: {summary.Succeeded}. Освободилось: {Format.Size(summary.ActuallyFreedBytes)}.\n\n"
-                  + "Место вернётся полностью после очистки Корзины.",
-            "Удаление файлов",
+                : Format.Text("Disk.DeleteResult", summary.Succeeded, Format.Size(summary.ActuallyFreedBytes)),
+            Strings.Get("Disk.DeleteTitle"),
             MessageBoxButton.OK,
             MessageBoxImage.Information);
 
@@ -417,7 +408,11 @@ public sealed class DiskPage : ListPage
 
         foreach (var category in result.ByCategory.Take(6))
         {
-            rows.Add(new ListRow(category.Category, $"{category.FileCount} файлов", Format.Size(category.TotalBytes), "вид файлов"));
+            rows.Add(new ListRow(
+                category.Category,
+                Format.Text("Disk.FilesCount", category.FileCount),
+                Format.Size(category.TotalBytes),
+                Strings.Get("Disk.FileKind")));
         }
 
         foreach (var file in result.LargestFiles.Take(15))
@@ -428,8 +423,8 @@ public sealed class DiskPage : ListPage
                 Path.GetFileName(file.Path),
                 file.Path,
                 Format.Size(file.SizeOnDiskBytes),
-                synced ? "в облачной папке" : "крупный файл",
-                synced ? "Удаление уйдёт на все ваши устройства" : null,
+                synced ? Strings.Get("Disk.InCloud") : Strings.Get("Disk.LargeFile"),
+                synced ? Strings.Get("Disk.CloudNote") : null,
                 Payload: file));
         }
 
@@ -438,21 +433,21 @@ public sealed class DiskPage : ListPage
             var synced = group.Files.Any(f => f.Traits.HasFlag(FileTraits.InCloudFolder));
 
             rows.Add(new ListRow(
-                $"{group.Files.Count} одинаковых копии",
+                Format.Text("Disk.CopiesCount", group.Files.Count),
                 string.Join("   |   ", group.Files.Select(f => f.Path)),
                 Format.Size(group.RecoverableBytes),
-                synced ? "копии в облачной папке" : "дубликаты",
+                synced ? Strings.Get("Disk.InCloud") : Strings.Get("Disk.Duplicates"),
                 synced
-                    ? "Освободится столько, если оставить одну копию. Удаление уйдёт на все ваши устройства"
-                    : "Освободится столько, если оставить одну копию",
+                    ? Strings.Get("Disk.CopiesCloudNote")
+                    : Strings.Get("Disk.CopiesNote"),
                 Payload: group));
         }
 
-        var status = $"Просмотрено {result.TotalFilesScanned} файлов, {Format.Size(result.TotalBytesScanned)}."
+        var status = Format.Text("Disk.Status", result.TotalFilesScanned, Format.Size(result.TotalBytesScanned))
                      + (result.RecoverableFromDuplicates > 0
-                         ? $" На копиях можно вернуть {Format.Size(result.RecoverableFromDuplicates)}."
+                         ? Format.Text("Disk.StatusDuplicates", Format.Size(result.RecoverableFromDuplicates))
                          : string.Empty)
-                     + (result.SkipNotes.Count > 0 ? $" Не вошло в подсчёт: {string.Join("; ", result.SkipNotes)}." : string.Empty);
+                     + (result.SkipNotes.Count > 0 ? Format.Text("Disk.StatusSkipped", string.Join("; ", result.SkipNotes)) : string.Empty);
 
         return (rows, status);
     }
@@ -464,10 +459,10 @@ public sealed class HealthPage : ListPage
     public HealthPage()
     {
         Configure(
-            "Состояние системы",
-            "Показатели берутся у самих накопителей. Если диск их не сообщает, здесь будет честное «не сообщает», а не выдуманная оценка.",
+            Strings.Get("Health.Title"),
+            Strings.Get("Health.Subtitle"),
             LoadAsync,
-            extraButtonText: "Проверить целостность системы",
+            extraButtonText: Strings.Get("Health.CheckIntegrity"),
             extraAction: CheckIntegrityAsync,
             requiresSelection: false);
     }
@@ -484,12 +479,8 @@ public sealed class HealthPage : ListPage
     private async Task CheckIntegrityAsync()
     {
         var confirmed = MessageBox.Show(
-            "Windows проверит свои системные файлы и восстановит повреждённые.\n\n"
-            + "Это занимает от 10 до 40 минут. Остановить проверку нельзя: закрытие её окна "
-            + "работу не прервёт.\n\n"
-            + "Откроется окно с ходом проверки, и Windows запросит права администратора.\n\n"
-            + "Запустить?",
-            "Проверка целостности",
+            Strings.Get("Integrity.Confirm"),
+            Strings.Get("Integrity.Title"),
             MessageBoxButton.OKCancel,
             MessageBoxImage.Warning);
 
@@ -503,9 +494,8 @@ public sealed class HealthPage : ListPage
         if (!File.Exists(executor))
         {
             MessageBox.Show(
-                "Рядом с программой нет файла vacate-cli.exe, который выполняет проверку.\n\n"
-                + "Похоже, поставка неполная — переустановите программу.",
-                "Проверка целостности",
+                Strings.Get("Integrity.NoCli"),
+                Strings.Get("Integrity.Title"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
 
@@ -563,15 +553,15 @@ public sealed class HealthPage : ListPage
         {
             message = File.Exists(reportPath)
                 ? JsonSerializer.Deserialize<IntegrityReport>(File.ReadAllText(reportPath))?.Message
-                  ?? "Проверка завершилась, но итог прочитать не удалось."
-                : "Проверка завершилась, но итог не дошёл до программы.";
+                  ?? Strings.Get("Integrity.NoResult")
+                : Strings.Get("Integrity.NoReport");
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
-            message = "Проверка завершилась, но итог прочитать не удалось.";
+            message = Strings.Get("Integrity.NoResult");
         }
 
-        MessageBox.Show(message, "Проверка целостности", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(message, Strings.Get("Integrity.Title"), MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private static async Task<(IReadOnlyList<ListRow>, string)> LoadAsync(CancellationToken ct)
@@ -586,43 +576,43 @@ public sealed class HealthPage : ListPage
 
             if (disk.TemperatureCelsius is { } temperature)
             {
-                details.Add($"температура {temperature} °C");
+                details.Add(Format.Text("Health.Temperature", temperature));
             }
 
             if (disk.WearPercent is { } wear)
             {
-                details.Add($"износ {wear}%");
+                details.Add(Format.Text("Health.Wear", wear));
             }
 
             if (disk.PowerOnHours is { } hours)
             {
-                details.Add($"наработка {hours} ч");
+                details.Add(Format.Text("Health.PowerOn", hours));
             }
 
             var note = disk.Unavailable.Count > 0
-                ? $"Диск не сообщает: {string.Join(", ", disk.Unavailable)}"
+                ? Format.Text("Health.NotReported", string.Join(", ", disk.Unavailable))
                 : null;
 
             rows.Add(new ListRow(
                 Title: disk.Model,
                 Subtitle: $"{disk.MediaType} · {Format.Size(disk.SizeBytes)}" + (details.Count > 0 ? " · " + string.Join(" · ", details) : string.Empty),
                 Value: DescribeHealth(disk.Health),
-                Badge: disk.NeedsAttention ? "требует внимания" : null,
+                Badge: disk.NeedsAttention ? Strings.Get("Health.NeedsAttention") : null,
                 Note: note));
         }
 
         var status = disks.Count == 0
-            ? "Сведения о дисках недоступны. Часть данных требует прав администратора."
-            : $"Дисков: {disks.Count}.";
+            ? Strings.Get("Health.NoDisks")
+            : Format.Text("Health.DiskCount", disks.Count);
 
         return (rows, status);
     }
 
     private static string DescribeHealth(DiskHealthStatus status) => status switch
     {
-        DiskHealthStatus.Healthy => "исправен",
-        DiskHealthStatus.Warning => "предупреждения",
-        DiskHealthStatus.Unhealthy => "неисправен",
-        _ => "не сообщил",
+        DiskHealthStatus.Healthy => Strings.Get("Health.Healthy"),
+        DiskHealthStatus.Warning => Strings.Get("Health.Warning"),
+        DiskHealthStatus.Unhealthy => Strings.Get("Health.Unhealthy"),
+        _ => Strings.Get("Health.Unknown"),
     };
 }

@@ -1,7 +1,8 @@
 <Window x:Class="Vacate.App.Views.FirstRunTour"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="С чего начать"
+        xmlns:loc="clr-namespace:Vacate.App.Localization"
+        Title="{loc:Loc Tour.Title}"
         Height="560" Width="640"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource SurfaceBrush}"
@@ -56,9 +57,9 @@
             </ItemsControl>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <Button x:Name="SkipButton" Style="{StaticResource SecondaryButton}" Content="Пропустить"
+                <Button x:Name="SkipButton" Style="{StaticResource SecondaryButton}" Content="{loc:Loc Tour.Skip}"
                         Margin="0,0,10,0" Click="OnSkip" />
-                <Button x:Name="NextButton" Style="{StaticResource PrimaryButton}" Content="Дальше"
+                <Button x:Name="NextButton" Style="{StaticResource PrimaryButton}" Content="{loc:Loc Tour.Next}"
                         Click="OnNext" />
             </StackPanel>
         </Grid>

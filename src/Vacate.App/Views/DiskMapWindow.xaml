@@ -1,7 +1,8 @@
 <Window x:Class="Vacate.App.Views.DiskMapWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Карта диска"
+        xmlns:loc="clr-namespace:Vacate.App.Localization"
+        Title="{loc:Loc Map.Title}"
         Height="720" Width="1000"
         MinHeight="520" MinWidth="720"
         WindowStartupLocation="CenterOwner"
@@ -16,13 +17,13 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0">
-            <TextBlock Style="{StaticResource PageTitle}" Text="Карта диска" />
+            <TextBlock Style="{StaticResource PageTitle}" Text="{loc:Loc Map.Title}" />
             <TextBlock Style="{StaticResource PageSubtitle}"
-                       Text="Площадь прямоугольника — занятое место. Щелчок открывает папку, двойной щелчок по «файлам в этой папке» показывает её в проводнике." />
+                       Text="{loc:Loc Map.Subtitle}" />
         </StackPanel>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,14">
-            <Button x:Name="UpButton" Style="{StaticResource SecondaryButton}" Content="Наверх"
+            <Button x:Name="UpButton" Style="{StaticResource SecondaryButton}" Content="{loc:Loc Map.Up}"
                     Click="OnUp" IsEnabled="False" />
             <TextBlock x:Name="PathText" Style="{StaticResource MonoText}" VerticalAlignment="Center"
                        Margin="14,0,0,0" />
@@ -35,7 +36,7 @@
 
                 <TextBlock x:Name="BusyText" Style="{StaticResource BodyText}"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Visibility="Collapsed" Text="Считаю размеры…" />
+                           Visibility="Collapsed" Text="{loc:Loc Map.Counting}" />
             </Grid>
         </Border>
 

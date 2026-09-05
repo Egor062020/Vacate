@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using Vacate.Abstractions.Execution;
 using Vacate.Abstractions.Model;
+using Vacate.App.Localization;
 using Vacate.Core.Execution;
 using Vacate.Core.Journal;
 using Vacate.Core.Safety;
@@ -51,17 +52,17 @@ public partial class UninstallWindow : Window
 
     private void ShowConfirmStep()
     {
-        StepTitle.Text = "Удаление программы";
-        StepSubtitle.Text = "Проверьте, что это именно та программа. После запуска остановить деинсталлятор нельзя.";
+        StepTitle.Text = Strings.Get("Uninstall.WindowTitle");
+        StepSubtitle.Text = Strings.Get("Uninstall.ConfirmSubtitle");
 
         AppName.Text = _app.DisplayName;
 
         var details = new List<string>
         {
-            $"Издатель:  {_app.Publisher ?? "не указан"}",
-            $"Версия:    {_app.Version ?? "не указана"}",
-            $"Каталог:   {_app.InstallLocation ?? "не указан"}",
-            $"Установка: {(_app.Scope == InstallScope.User ? "только для вас" : "для всех пользователей")}",
+            $"{Strings.Get("Uninstall.Publisher"),-11}{_app.Publisher ?? Strings.Get("Uninstall.NotSpecified")}",
+            $"{Strings.Get("Uninstall.Version"),-11}{_app.Version ?? Strings.Get("Uninstall.VersionUnknown")}",
+            $"{Strings.Get("Uninstall.Location"),-11}{_app.InstallLocation ?? Strings.Get("Uninstall.NotSpecified")}",
+            $"{Strings.Get("Uninstall.Scope"),-11}{Strings.Get(_app.Scope == InstallScope.User ? "Uninstall.ForYou" : "Uninstall.ForAll")}",
         };
 
         AppDetails.Text = string.Join(Environment.NewLine, details);
@@ -72,25 +73,21 @@ public partial class UninstallWindow : Window
         {
             // Не запрет, а честное предупреждение: удалять компоненты иногда нужно,
             // но человек должен знать, что ломает не одну программу.
-            warnings.Add("Похоже на компонент, нужный другим программам. После удаления те из них, "
-                         + "что на него опираются, перестанут запускаться — и связь с этим действием "
-                         + "будет уже не очевидна.");
+            warnings.Add(Strings.Get("Uninstall.WarnRuntime"));
         }
 
         if (ForcedUninstall.IsApplicable(_app))
         {
             // Случай распространённый: программу снесли вручную, а запись осталась.
             // Штатно удалить нечем, и человек видит её в списке навсегда.
-            warnings.Add(_app.CanUninstall
-                ? "Деинсталлятор программы не найден: запись пережила саму программу. "
-                  + "Vacate поищет оставшиеся файлы и уберёт запись из списка установленного."
-                : "Программа не сообщила системе, как её удалять. Vacate поищет оставшиеся "
-                  + "файлы и уберёт запись из списка установленного.");
+            warnings.Add(Strings.Get(_app.CanUninstall
+                ? "Uninstall.WarnMissingUninstaller"
+                : "Uninstall.WarnNoUninstaller"));
         }
 
         if (_app.Scope == InstallScope.Machine)
         {
-            warnings.Add("Программа установлена для всех пользователей: Windows запросит права администратора.");
+            warnings.Add(Strings.Get("Uninstall.WarnMachineScope"));
         }
 
         if (warnings.Count > 0)
@@ -99,7 +96,8 @@ public partial class UninstallWindow : Window
             WarningText.Text = string.Join(Environment.NewLine + Environment.NewLine, warnings);
         }
 
-        ActionButton.Content = ForcedUninstall.IsApplicable(_app) ? "Удалить принудительно" : "Удалить программу";
+        ActionButton.Content = Strings.Get(
+            ForcedUninstall.IsApplicable(_app) ? "Uninstall.StartForced" : "Uninstall.Start");
     }
 
     private async void OnAction(object sender, RoutedEventArgs e)
@@ -139,10 +137,9 @@ public partial class UninstallWindow : Window
             return;
         }
 
-        EnterStep(Step.Running, "Работает деинсталлятор",
-            "Отвечайте на его вопросы в его собственном окне. Vacate ждёт, пока он закончит.");
+        EnterStep(Step.Running, Strings.Get("Uninstall.RunningTitle"), Strings.Get("Uninstall.RunningSubtitle"));
 
-        BusyText.Text = $"Идёт удаление «{_app.DisplayName}»…";
+        BusyText.Text = Format.Text("Uninstall.Running", _app.DisplayName);
 
         var outcome = await new UninstallRunner()
             .RunAsync(_app, silent: false, TimeSpan.FromMinutes(30), CancellationToken.None);
@@ -151,11 +148,11 @@ public partial class UninstallWindow : Window
         {
             // Следы не ищем: программа, возможно, осталась на месте, и тогда её
             // рабочие файлы были бы предложены к удалению как остатки.
-            ShowResult("Удаление не завершилось",
-                (outcome.Message ?? "Деинсталлятор не отработал.")
+            ShowResult(
+                Strings.Get("Uninstall.FailedTitle"),
+                (outcome.Message ?? Strings.Get("Uninstall.FailedBody"))
                 + Environment.NewLine + Environment.NewLine
-                + "Следы не искали: программа, возможно, осталась на месте, "
-                + "и её рабочие файлы можно было бы принять за остатки.");
+                + Strings.Get("Uninstall.FailedNote"));
 
             return;
         }
@@ -165,15 +162,15 @@ public partial class UninstallWindow : Window
 
     private async Task SearchLeftoversAsync(string? uninstallerMessage = null)
     {
-        EnterStep(Step.Running, "Ищу следы", "Смотрю каталоги программ и ветки реестра.");
-        BusyText.Text = "Поиск следов…";
+        EnterStep(Step.Running, Strings.Get("Uninstall.SearchingTitle"), Strings.Get("Uninstall.SearchingSubtitle"));
+        BusyText.Text = Strings.Get("Uninstall.Searching");
 
         var found = await Task.Run(() => new LeftoverScanner().Scan(_app, CancellationToken.None));
 
         if (found.Count == 0)
         {
             var text = (uninstallerMessage is null ? string.Empty : uninstallerMessage + Environment.NewLine + Environment.NewLine)
-                       + "Файлов программы не найдено.";
+                       + Strings.Get("Uninstall.NoTraces");
 
             // Следов нет, но запись в списке осталась — ради неё всё и затевалось.
             if (_forced)
@@ -181,7 +178,7 @@ public partial class UninstallWindow : Window
                 text += Environment.NewLine + Environment.NewLine + new ForcedUninstall().RemoveRegistration(_app).Message;
             }
 
-            ShowResult("Готово", text);
+            ShowResult(Strings.Get("Uninstall.Done"), text);
 
             return;
         }
@@ -197,15 +194,13 @@ public partial class UninstallWindow : Window
         var uncertain = _leftovers.Count(r => !r.IsChecked);
 
         LeftoverHint.Text = uncertain > 0
-            ? $"Отмечено {_leftovers.Count - uncertain} из {_leftovers.Count}. Не отмечены совпадения уровня «возможно»: "
-              + "за ними стоит только часть имени, и это может оказаться чужой каталог. Проверьте пути глазами."
-            : $"Отмечено всё найденное: {_leftovers.Count}. Каталоги уйдут в карантин и вернутся кнопкой отката.";
+            ? Format.Text("Uninstall.HintUnchecked", _leftovers.Count - uncertain, _leftovers.Count)
+            : Format.Text("Uninstall.HintAll", _leftovers.Count);
 
-        EnterStep(Step.Leftovers, "Что осталось после деинсталлятора",
-            "Снимите отметку со всего, в чём не уверены. Удалено будет только отмеченное.");
+        EnterStep(Step.Leftovers, Strings.Get("Uninstall.LeftoversTitle"), Strings.Get("Uninstall.LeftoversSubtitle"));
 
-        ActionButton.Content = "Удалить отмеченное";
-        CancelButton.Content = "Оставить как есть";
+        ActionButton.Content = Strings.Get("Uninstall.RemoveMarked");
+        CancelButton.Content = Strings.Get("Uninstall.LeaveAsIs");
     }
 
     private async Task RemoveLeftoversAsync()
@@ -214,7 +209,7 @@ public partial class UninstallWindow : Window
 
         if (selected.Count == 0)
         {
-            ShowResult("Ничего не удалено", "Не отмечено ни одного объекта. Программа удалена, следы остались на месте.");
+            ShowResult(Strings.Get("Uninstall.NothingRemoved"), Strings.Get("Uninstall.NothingChecked"));
             return;
         }
 
@@ -222,18 +217,18 @@ public partial class UninstallWindow : Window
 
         if (plan.TotalCount == 0)
         {
-            ShowResult("Удалять нечего", "Отмеченные объекты исчезли, пока вы читали список.");
+            ShowResult(Strings.Get("Uninstall.NothingLeft"), Strings.Get("Uninstall.VanishedWhileReading"));
             return;
         }
 
         var elevating = ElevatedExecution.WillAskForRights(plan, dryRun: false);
 
-        EnterStep(Step.Running, "Убираю следы",
-            elevating
-                ? "Часть следов лежит в системных папках: Windows сейчас спросит права администратора."
-                : "Каталоги перемещаются в карантин, ветки реестра удаляются.");
+        EnterStep(
+            Step.Running,
+            Strings.Get("Uninstall.RemovingTitle"),
+            Strings.Get(elevating ? "Uninstall.RemovingElevated" : "Uninstall.RemovingSubtitle"));
 
-        BusyText.Text = $"Удаление: {selected.Count} объектов…";
+        BusyText.Text = Format.Text("Uninstall.Removing", selected.Count);
 
         var summary = await ElevatedExecution.RunAsync(plan, dryRun: false);
         var text = Summarize(summary);
@@ -249,13 +244,13 @@ public partial class UninstallWindow : Window
 
             if (!outcome.Success)
             {
-                text += Environment.NewLine
-                        + "Программа останется в списке установленного. Попробуйте ещё раз "
-                        + "или уберите запись через «Параметры → Приложения».";
+                text += Environment.NewLine + Strings.Get("Uninstall.StillListed");
             }
         }
 
-        ShowResult(summary.Succeeded > 0 || _forced ? "Готово" : "Ничего не удалено", text);
+        ShowResult(
+            Strings.Get(summary.Succeeded > 0 || _forced ? "Uninstall.Done" : "Uninstall.NothingRemoved"),
+            text);
     }
 
     private static string Summarize(RunSummary summary)
@@ -267,35 +262,38 @@ public partial class UninstallWindow : Window
             // Отказ в правах — решение человека, а не сбой программы.
             lines.Add(summary.Error);
             lines.Add(string.Empty);
-            lines.Add("Следы остались на месте. Программа при этом уже удалена.");
+            lines.Add(Strings.Get("Uninstall.RightsRefused"));
 
             return string.Join(Environment.NewLine, lines);
         }
 
-        lines.Add($"Удалено объектов: {summary.Succeeded}");
+        lines.Add(Format.Text("Uninstall.RemovedCount", summary.Succeeded));
 
         // Две цифры рядом — суть честного счётчика: заявленный размер и то,
         // насколько на самом деле изменилось свободное место.
-        lines.Add($"Реально освободилось: {Format.Size(summary.ActuallyFreedBytes)} из заявленных {Format.Size(summary.ClaimedBytes)}");
+        lines.Add(Format.Text(
+            "Uninstall.FreedOf",
+            Format.Size(summary.ActuallyFreedBytes),
+            Format.Size(summary.ClaimedBytes)));
 
         if (summary.Elevated)
         {
-            lines.Add("Выполнено отдельным процессом с правами администратора.");
+            lines.Add(Strings.Get("Uninstall.ByElevated"));
         }
 
         if (summary.Skipped > 0)
         {
-            lines.Add($"Пропущено: {summary.Skipped}");
+            lines.Add(Format.Text("Uninstall.Skipped", summary.Skipped));
         }
 
         if (summary.Failed > 0)
         {
-            lines.Add($"Не удалось удалить: {summary.Failed}");
+            lines.Add(Format.Text("Uninstall.Failed", summary.Failed));
         }
 
         if (summary.Denied > 0)
         {
-            lines.Add($"Отклонено проверками безопасности: {summary.Denied}");
+            lines.Add(Format.Text("Uninstall.Denied", summary.Denied));
         }
 
         if (summary.Error is not null)
@@ -306,7 +304,7 @@ public partial class UninstallWindow : Window
         if (summary.Succeeded > 0 && summary.SessionId is not null)
         {
             lines.Add(string.Empty);
-            lines.Add("Каталоги лежат в карантине 30 дней. Вернуть их можно командой:");
+            lines.Add(Strings.Get("Uninstall.UndoHint"));
             lines.Add($"vacate-cli undo {summary.SessionId}");
         }
 
@@ -315,9 +313,9 @@ public partial class UninstallWindow : Window
             // Карантин реестр не покрывает, поэтому возврат идёт через файл.
             // Он открывается двойным щелчком и работает без этой программы.
             lines.Add(string.Empty);
-            lines.Add("Копия удалённых ветвей реестра сохранена:");
+            lines.Add(Strings.Get("Uninstall.BackupHint"));
             lines.Add(summary.RegistryBackupPath);
-            lines.Add("Чтобы вернуть их, откройте этот файл двойным щелчком.");
+            lines.Add(Strings.Get("Uninstall.BackupHowTo"));
         }
 
         return string.Join(Environment.NewLine, lines);
@@ -344,9 +342,9 @@ public partial class UninstallWindow : Window
 
     private void ShowResult(string title, string text)
     {
-        EnterStep(Step.Done, title, "Что произошло:");
+        EnterStep(Step.Done, title, Strings.Get("Uninstall.WhatHappened"));
         ResultText.Text = text;
-        ActionButton.Content = "Закрыть";
+        ActionButton.Content = Strings.Get("Common.Close");
     }
 }
 
@@ -367,7 +365,8 @@ internal sealed class LeftoverRow
 
     public string Path => Item.Path;
 
-    public string Kind => Item.Kind == LeftoverKind.Directory ? "Каталог" : "Ветка реестра";
+    public string Kind => Strings.Get(
+        Item.Kind == LeftoverKind.Directory ? "Uninstall.Directory" : "Uninstall.RegistryKey");
 
     public string Size => Item.SizeOnDiskBytes > 0 ? Format.Size(Item.SizeOnDiskBytes) : string.Empty;
 
@@ -375,9 +374,9 @@ internal sealed class LeftoverRow
 
     public string ConfidenceLabel => Item.Confidence switch
     {
-        LeftoverConfidence.Certain => "точно её",
-        LeftoverConfidence.Likely => "скорее всего её",
-        _ => "возможно, чужое",
+        LeftoverConfidence.Certain => Strings.Get("Uninstall.Certain"),
+        LeftoverConfidence.Likely => Strings.Get("Uninstall.Likely"),
+        _ => Strings.Get("Uninstall.Possible"),
     };
 
     public Brush ConfidenceBrush => Item.Confidence switch

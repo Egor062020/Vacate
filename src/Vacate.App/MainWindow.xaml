@@ -1,6 +1,7 @@
 <Window x:Class="Vacate.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:Vacate.App.Localization"
         Title="Vacate"
         Height="760" Width="1180"
         MinHeight="560" MinWidth="900"
@@ -47,14 +48,14 @@
 
                 <!-- Разделы -->
                 <StackPanel Grid.Row="1">
-                    <RadioButton x:Name="NavDashboard" Style="{StaticResource NavButton}" Content="Обзор" IsChecked="True" Checked="OnNavigate" Tag="dashboard" />
-                    <RadioButton x:Name="NavClean" Style="{StaticResource NavButton}" Content="Очистка мусора" Checked="OnNavigate" Tag="clean" />
-                    <RadioButton x:Name="NavApps" Style="{StaticResource NavButton}" Content="Программы" Checked="OnNavigate" Tag="apps" />
-                    <RadioButton x:Name="NavStartup" Style="{StaticResource NavButton}" Content="Автозагрузка" Checked="OnNavigate" Tag="startup" />
-                    <RadioButton x:Name="NavExtensions" Style="{StaticResource NavButton}" Content="Расширения браузеров" Checked="OnNavigate" Tag="extensions" />
-                    <RadioButton x:Name="NavDisk" Style="{StaticResource NavButton}" Content="Место на диске" Checked="OnNavigate" Tag="disk" />
-                    <RadioButton x:Name="NavHealth" Style="{StaticResource NavButton}" Content="Состояние системы" Checked="OnNavigate" Tag="health" />
-                    <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Content="Настройки" Checked="OnNavigate" Tag="settings" />
+                    <RadioButton x:Name="NavDashboard" Style="{StaticResource NavButton}" Content="{loc:Loc Nav.Dashboard}" IsChecked="True" Checked="OnNavigate" Tag="dashboard" />
+                    <RadioButton x:Name="NavClean" Style="{StaticResource NavButton}" Content="{loc:Loc Nav.Clean}" Checked="OnNavigate" Tag="clean" />
+                    <RadioButton x:Name="NavApps" Style="{StaticResource NavButton}" Content="{loc:Loc Nav.Apps}" Checked="OnNavigate" Tag="apps" />
+                    <RadioButton x:Name="NavStartup" Style="{StaticResource NavButton}" Content="{loc:Loc Nav.Startup}" Checked="OnNavigate" Tag="startup" />
+                    <RadioButton x:Name="NavExtensions" Style="{StaticResource NavButton}" Content="{loc:Loc Nav.Extensions}" Checked="OnNavigate" Tag="extensions" />
+                    <RadioButton x:Name="NavDisk" Style="{StaticResource NavButton}" Content="{loc:Loc Nav.Disk}" Checked="OnNavigate" Tag="disk" />
+                    <RadioButton x:Name="NavHealth" Style="{StaticResource NavButton}" Content="{loc:Loc Nav.Health}" Checked="OnNavigate" Tag="health" />
+                    <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Content="{loc:Loc Nav.Settings}" Checked="OnNavigate" Tag="settings" />
                 </StackPanel>
 
                 <TextBlock Grid.Row="2" x:Name="VersionLabel" Style="{StaticResource SecondaryText}"
@@ -72,9 +73,9 @@
             <!-- Заголовок окна: перетаскивание и системные кнопки -->
             <Border Grid.Row="0" Background="Transparent" MouseLeftButtonDown="OnTitleBarDrag">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="OnMinimize" ToolTip="Свернуть" />
-                    <Button Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" ToolTip="Развернуть" />
-                    <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="OnClose" ToolTip="Закрыть" />
+                    <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="OnMinimize" ToolTip="{loc:Loc Window.Minimize}" />
+                    <Button Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" ToolTip="{loc:Loc Window.Maximize}" />
+                    <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="OnClose" ToolTip="{loc:Loc Common.Close}" />
                 </StackPanel>
             </Border>
 
@@ -97,11 +98,11 @@
                                VerticalAlignment="Center" Margin="0,0,16,0" />
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <Button Style="{StaticResource PrimaryButton}" Content="Открыть страницу"
+                        <Button Style="{StaticResource PrimaryButton}" Content="{loc:Loc Update.Open}"
                                 Padding="14,7" Click="OnOpenUpdatePage" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Не сейчас"
+                        <Button Style="{StaticResource SecondaryButton}" Content="{loc:Loc Update.Later}"
                                 Padding="14,7" Margin="8,0,0,0" Click="OnDismissUpdate" />
-                        <Button Style="{StaticResource SecondaryButton}" Content="Не проверять больше"
+                        <Button Style="{StaticResource SecondaryButton}" Content="{loc:Loc Update.Never}"
                                 Padding="14,7" Margin="8,0,0,0" Click="OnDisableUpdates" />
                     </StackPanel>
                 </Grid>

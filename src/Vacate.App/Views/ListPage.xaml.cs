@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using Vacate.App.Localization;
 
 namespace Vacate.App.Views;
 
@@ -144,7 +145,7 @@ public partial class ListPage : UserControl
         }
 
         RefreshButton.IsEnabled = false;
-        StatusText.Text = "Читаю…";
+        StatusText.Text = Strings.Get("Common.Reading");
 
         SetScanIndicator(true);
 
@@ -158,7 +159,7 @@ public partial class ListPage : UserControl
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Пользователю нужна причина, а не тип исключения.
-            StatusText.Text = "Часть данных недоступна без прав администратора.";
+            StatusText.Text = Strings.Get("Common.NoRightsHere");
         }
         finally
         {

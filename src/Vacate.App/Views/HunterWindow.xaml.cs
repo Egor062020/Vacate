@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using Vacate.Abstractions.Model;
+using Vacate.App.Localization;
 using Vacate.Platform.Windows.Registry;
 
 namespace Vacate.App.Views;
@@ -37,7 +38,7 @@ public partial class HunterWindow : Window
         Crosshair.MouseMove += OnHuntMove;
         Crosshair.MouseLeftButtonUp += OnHuntEnd;
 
-        ResultTitle.Text = "Ведите прицел к нужному окну…";
+        ResultTitle.Text = Strings.Get("Hunter.Dragging");
         ResultDetails.Text = string.Empty;
         ResultNote.Text = string.Empty;
     }
@@ -50,7 +51,7 @@ public partial class HunterWindow : Window
 
         ResultTitle.Text = result.App?.DisplayName
                            ?? result.WindowTitle
-                           ?? "Наведите прицел на окно";
+                           ?? Strings.Get("Hunter.PointAt");
     }
 
     private void OnHuntEnd(object sender, MouseButtonEventArgs e)
@@ -73,24 +74,24 @@ public partial class HunterWindow : Window
     {
         _found = result.App;
 
-        ResultTitle.Text = result.App?.DisplayName ?? "Программа не определена";
+        ResultTitle.Text = result.App?.DisplayName ?? Strings.Get("Hunter.NotIdentified");
 
         var details = new List<string>();
 
         if (result.WindowTitle is not null)
         {
-            details.Add($"Заголовок окна: {result.WindowTitle}");
+            details.Add(Format.Text("Hunter.WindowTitle", result.WindowTitle));
         }
 
         if (result.ExecutablePath is not null)
         {
-            details.Add($"Запущено из:    {result.ExecutablePath}");
+            details.Add(Format.Text("Hunter.StartedFrom", result.ExecutablePath));
         }
 
         if (result.App is not null)
         {
-            details.Add($"Издатель:       {result.App.Publisher ?? "не указан"}");
-            details.Add($"Версия:         {result.App.Version ?? "не указана"}");
+            details.Add($"{Strings.Get("Uninstall.Publisher"),-15}{result.App.Publisher ?? Strings.Get("Uninstall.NotSpecified")}");
+            details.Add($"{Strings.Get("Uninstall.Version"),-15}{result.App.Version ?? Strings.Get("Uninstall.VersionUnknown")}");
         }
 
         ResultDetails.Text = string.Join(Environment.NewLine, details);

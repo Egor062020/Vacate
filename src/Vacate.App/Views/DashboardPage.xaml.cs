@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using Vacate.App.Localization;
 using Vacate.Core.Journal;
 using Vacate.Core.Safety;
 using Vacate.Platform.Windows.Files;
@@ -49,8 +50,8 @@ public partial class DashboardPage : UserControl
                     if (usedPercent >= 90)
                     {
                         warnings.Add(new WarningItem(
-                            $"Диск заполнен на {usedPercent:0}%",
-                            "При нехватке свободного места Windows начинает работать заметно медленнее."));
+                            Format.Text("Dashboard.DiskFull", $"{usedPercent:0}"),
+                            Strings.Get("Dashboard.DiskFullNote")));
                     }
                 }
             }
@@ -62,15 +63,15 @@ public partial class DashboardPage : UserControl
             foreach (var disk in new DiskHealthReader().Read().Where(d => d.NeedsAttention))
             {
                 warnings.Add(new WarningItem(
-                    $"Диск {disk.Model}: показатели требуют внимания",
-                    "Сделайте резервную копию важных данных."));
+                    Format.Text("Dashboard.DiskAttention", disk.Model),
+                    Strings.Get("Dashboard.DiskAttentionNote")));
             }
 
             if (startupCount >= 12)
             {
                 warnings.Add(new WarningItem(
-                    $"В автозапуске {startupCount} программ",
-                    "Каждая из них добавляет секунды ко времени входа в систему."));
+                    Format.Text("Dashboard.ManyStartup", startupCount),
+                    Strings.Get("Dashboard.ManyStartupNote")));
             }
         });
 
@@ -99,9 +100,12 @@ public partial class DashboardPage : UserControl
 
             // Две цифры рядом — суть честного счётчика: сколько удалено
             // и сколько места это на самом деле дало.
-            LastSessionText.Text =
-                $"{session.StartedAtUtc.ToLocalTime():dd.MM.yyyy HH:mm} — обработано {session.ItemCount} объектов, " +
-                $"заявлено {Format.Size(session.ClaimedBytes)}, реально освободилось {Format.Size(session.ActuallyFreedBytes)}.";
+            LastSessionText.Text = Format.Text(
+                "Dashboard.LastSession",
+                session.StartedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm"),
+                session.ItemCount,
+                Format.Size(session.ClaimedBytes),
+                Format.Size(session.ActuallyFreedBytes));
         }
         catch (IOException)
         {
@@ -112,7 +116,7 @@ public partial class DashboardPage : UserControl
     private async void OnScan(object sender, RoutedEventArgs e)
     {
         ScanButton.IsEnabled = false;
-        ScanHint.Text = "Ищу…";
+        ScanHint.Text = Strings.Get("Dashboard.Searching");
 
         try
         {
@@ -132,8 +136,8 @@ public partial class DashboardPage : UserControl
 
             JunkValue.Text = Format.Size(size);
             ScanHint.Text = count == 0
-                ? "Чисто. Мусор накапливается примерно за неделю."
-                : $"Найдено {count} объектов. Подробности — в разделе «Очистка мусора».";
+                ? Strings.Get("Clean.Empty")
+                : Format.Text("Dashboard.FoundJunk", count);
         }
         finally
         {

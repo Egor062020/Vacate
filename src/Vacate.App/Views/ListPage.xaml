@@ -1,6 +1,7 @@
 <UserControl x:Class="Vacate.App.Views.ListPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:Vacate.App.Localization">
 
     <!--
         Общая разметка для разделов, которые показывают список: программы, автозагрузка,
@@ -21,7 +22,7 @@
         </StackPanel>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,16">
-            <Button x:Name="RefreshButton" Style="{StaticResource PrimaryButton}" Content="Обновить" Click="OnRefresh" />
+            <Button x:Name="RefreshButton" Style="{StaticResource PrimaryButton}" Content="{loc:Loc Common.Refresh}" Click="OnRefresh" />
             <Button x:Name="ExtraButton" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0"
                     Visibility="Collapsed" Click="OnExtra" />
             <Button x:Name="SecondExtraButton" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0"

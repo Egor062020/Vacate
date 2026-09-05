@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using Vacate.Abstractions.Execution;
 using Vacate.Abstractions.Model;
+using Vacate.App.Localization;
 using Vacate.Abstractions.Safety;
 using Vacate.Core.Execution;
 using Vacate.Core.Journal;
@@ -27,7 +28,7 @@ public partial class CleanPage : UserControl
 
     private async void OnScan(object sender, RoutedEventArgs e)
     {
-        SetBusy(true, "Сканирую…");
+        SetBusy(true, Strings.Get("Clean.Scanning"));
 
         try
         {
@@ -54,8 +55,8 @@ public partial class CleanPage : UserControl
             GroupsList.ItemsSource = _rows;
 
             StatusText.Text = _plan.TotalCount == 0
-                ? "Чисто. Мусор накапливается примерно за неделю."
-                : $"Найдено {_plan.TotalCount} объектов, {Format.Size(_plan.TotalSizeOnDiskBytes)}. Это оценка сверху: часть файлов может быть занята.";
+                ? Strings.Get("Clean.Empty")
+                : Format.Text("Clean.Found", _plan.TotalCount, Format.Size(_plan.TotalSizeOnDiskBytes));
 
             PreviewButton.IsEnabled = _plan.TotalCount > 0;
             CleanButton.IsEnabled = _plan.TotalCount > 0;
@@ -90,15 +91,15 @@ public partial class CleanPage : UserControl
 
         return directories.Count == 1
             ? directories[0]!
-            : $"{directories[0]}  и ещё {directories.Count - 1}";
+            : Format.Text("Clean.AndMore", directories[0], directories.Count - 1);
     }
 
     private static string DescribeConsequence(OperationGroup group) => group.GroupId switch
     {
-        "cache.browsers" => "Сайты откроются в первый раз заметно медленнее. Пароли и вкладки не тронутся.",
-        "logs.windows" => "Журналы событий системы. Нужны только при разборе неполадок.",
-        "crash.reports" => "Отчёты об уже случившихся сбоях программ.",
-        "cache.delivery" => "Загруженные обновления Windows. При необходимости скачаются заново.",
+        "cache.browsers" => Strings.Get("Clean.CatBrowsers"),
+        "logs.windows" => Strings.Get("Clean.CatLogs"),
+        "crash.reports" => Strings.Get("Clean.CatCrash"),
+        "cache.delivery" => Strings.Get("Clean.CatDelivery"),
         _ => string.Empty,
     };
 
@@ -135,9 +136,8 @@ public partial class CleanPage : UserControl
                         location.Id,
                         DescribeGroup(LocalizedText.FromResource(location.TitleKey)),
                         path,
-                        "нужны права",
-                        "Окно программы работает без прав администратора и не может сюда заглянуть. "
-                        + "Отметьте — и при очистке Windows запросит права, а работу выполнит отдельный процесс.",
+                        Strings.Get("Common.NeedsRights"),
+                        Strings.Get("Clean.NeedsRightsNote"),
                         isChecked: false,
                         needsElevation: true));
 
@@ -250,8 +250,8 @@ public partial class CleanPage : UserControl
         if ((plan is null || plan.TotalCount == 0) && !hasElevated)
         {
             MessageBox.Show(
-                "Не отмечено ни одной категории. Отметьте хотя бы одну — иначе удалять нечего.",
-                "Очистка",
+                Strings.Get("Clean.NothingCheckedBody"),
+                Strings.Get("Clean.ConfirmTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
 
@@ -259,29 +259,25 @@ public partial class CleanPage : UserControl
         }
 
         var message = plan is { TotalCount: > 0 }
-            ? $"Будет удалено {plan.TotalCount} объектов, около {Format.Size(plan.TotalSizeOnDiskBytes)}.\n\n"
-              + "Это временные файлы и кэши: они создаются заново, но восстановить их будет нельзя."
-            : "Отмечены категории, которые окно программы прочитать не может.\n\n"
-              + "Их просканирует и очистит отдельный процесс с правами администратора.";
+            ? Format.Text("Clean.ConfirmBody", plan.TotalCount, Format.Size(plan.TotalSizeOnDiskBytes))
+            : Strings.Get("Clean.ConfirmElevatedOnly");
 
         // Отмеченные категории перечисляются поимённо: человек должен увидеть,
         // с чем именно он согласился, а не одну общую цифру.
-        message += "\n\nЧто будет очищено:\n"
+        message += Strings.Get("Clean.WhatWillGo")
                    + string.Join("\n", _rows.Where(r => r.IsChecked).Select(r => $"  · {r.Title}"));
 
         // Окно системы с запросом прав появляется внезапно, и человек, не понимающий,
         // откуда оно, обычно нажимает «Нет». Предупреждаем заранее.
         if (hasElevated || (plan is not null && ElevatedExecution.WillAskForRights(plan, dryRun: false)))
         {
-            message += "\n\nЧасть файлов лежит в системных папках, поэтому Windows спросит "
-                       + "права администратора. Само окно программы этих прав не получает: "
-                       + "работу выполнит отдельный процесс.";
+            message += Strings.Get("Clean.ElevationNote");
         }
 
         // Удаление безвозвратно — говорим это прямо и до, а не после.
         var confirmed = MessageBox.Show(
-            message + "\n\nПродолжить?",
-            "Очистка",
+            message + "\n\n" + Strings.Get("Common.Continue"),
+            Strings.Get("Clean.ConfirmTitle"),
             MessageBoxButton.OKCancel,
             MessageBoxImage.Warning);
 
@@ -298,11 +294,11 @@ public partial class CleanPage : UserControl
 
         if ((plan is null || plan.TotalCount == 0) && !hasElevated)
         {
-            StatusText.Text = "Не отмечено ни одной категории.";
+            StatusText.Text = Strings.Get("Clean.NothingChecked");
             return;
         }
 
-        SetBusy(true, dryRun ? "Пробный прогон…" : "Очищаю…");
+        SetBusy(true, Strings.Get(dryRun ? "Clean.DryRunning" : "Clean.Working"));
 
         try
         {
@@ -353,25 +349,25 @@ public partial class CleanPage : UserControl
         {
             // Отказ в правах — не сбой, а решение человека. И звучать должно так же.
             ResultClaimed.Text = summary.Error;
-            ResultActual.Text = "На диске ничего не изменилось.";
+            ResultActual.Text = Strings.Get("Clean.NothingChangedOnDisk");
             DiscrepancyList.ItemsSource = null;
             return;
         }
 
         if (summary.WasDryRun)
         {
-            ResultClaimed.Text = $"Было бы обработано: {summary.Succeeded} объектов, {Format.Size(summary.ClaimedBytes)}.";
-            ResultActual.Text = "На диске ничего не изменилось.";
+            ResultClaimed.Text = Format.Text("Clean.WouldProcess", summary.Succeeded, Format.Size(summary.ClaimedBytes));
+            ResultActual.Text = Strings.Get("Clean.NothingChangedOnDisk");
             DiscrepancyList.ItemsSource = null;
             return;
         }
 
         // Две цифры рядом. Конкуренты показывают только первую,
         // и она почти всегда больше действительной.
-        ResultClaimed.Text = $"Удалено: {summary.Succeeded} объектов, заявлено {Format.Size(summary.ClaimedBytes)}."
-                             + (summary.Elevated ? " Выполнено процессом с правами администратора." : string.Empty);
+        ResultClaimed.Text = Format.Text("Clean.Deleted", summary.Succeeded, Format.Size(summary.ClaimedBytes))
+                             + (summary.Elevated ? Strings.Get("Clean.ByElevated") : string.Empty);
 
-        ResultActual.Text = $"Реально освободилось: {Format.Size(summary.ActuallyFreedBytes)}";
+        ResultActual.Text = Format.Text("Clean.ActuallyFreed", Format.Size(summary.ActuallyFreedBytes));
 
         var notes = summary.Discrepancies
             .Select(d => $"· {Explain(d.Kind)} — {Format.Size(d.Bytes)}" + (d.Detail is null ? string.Empty : $" ({d.Detail})"))
@@ -387,12 +383,12 @@ public partial class CleanPage : UserControl
 
     private static string Explain(DiscrepancyKind kind) => kind switch
     {
-        DiscrepancyKind.HeldByProcess => "занято работающей программой, вернётся при её закрытии",
-        DiscrepancyKind.NotDeleted => "не удалось удалить",
-        DiscrepancyKind.HardLinked => "файл числится дважды, а занимает место один раз",
-        DiscrepancyKind.CompressedOrSparse => "сжатые файлы занимали на диске меньше",
-        DiscrepancyKind.InQuarantine => "в карантине, освободится после истечения срока",
-        _ => "в Корзине, освободится после её очистки",
+        DiscrepancyKind.HeldByProcess => Strings.Get("Clean.WhyHeld"),
+        DiscrepancyKind.NotDeleted => Strings.Get("Clean.WhyNotDeleted"),
+        DiscrepancyKind.HardLinked => Strings.Get("Clean.WhyHardLinked"),
+        DiscrepancyKind.CompressedOrSparse => Strings.Get("Clean.WhyCompressed"),
+        DiscrepancyKind.InQuarantine => Strings.Get("Clean.WhyQuarantine"),
+        _ => Strings.Get("Clean.WhyRecycleBin"),
     };
 
     private void SetBusy(bool busy, string status)
@@ -457,13 +453,15 @@ public partial class CleanPage : UserControl
 
     private static string DescribeGroup(LocalizedText title) => title.ResourceKey switch
     {
-        "Clean.Temp.User" => "Временные файлы пользователя",
-        "Clean.Temp.System" => "Временные файлы системы",
-        "Clean.Logs.Windows" => "Журналы Windows",
-        "Clean.Cache.Browsers" => "Кэши браузеров",
-        "Clean.Crash.Reports" => "Отчёты о сбоях программ",
-        "Clean.Cache.Delivery" => "Загруженные обновления Windows",
-        _ => title.Translations?.GetValueOrDefault("ru") ?? title.ResourceKey ?? "Прочее",
+        "Clean.Temp.User" => Strings.Get("Clean.Cat.TempUser"),
+        "Clean.Temp.System" => Strings.Get("Clean.Cat.TempSystem"),
+        "Clean.Logs.Windows" => Strings.Get("Clean.Cat.Logs"),
+        "Clean.Cache.Browsers" => Strings.Get("Clean.Cat.Browsers"),
+        "Clean.Crash.Reports" => Strings.Get("Clean.Cat.Crash"),
+        "Clean.Cache.Delivery" => Strings.Get("Clean.Cat.Delivery"),
+        _ => title.Translations?.GetValueOrDefault(Strings.IsEnglish ? "en" : "ru")
+             ?? title.ResourceKey
+             ?? Strings.Get("Clean.Cat.Other"),
     };
 
     /// <param name="isChecked">Категория попадёт в очистку. Меняется человеком.</param>

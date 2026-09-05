@@ -19,6 +19,16 @@ public sealed record AppSettings
     /// <summary>Проверять наличие новой версии.</summary>
     public bool CheckForUpdates { get; init; } = true;
 
+    /// <summary>
+    /// Язык интерфейса: «ru», «en» или пустое значение.
+    /// </summary>
+    /// <remarks>
+    /// Пустое значение означает «как в системе» и остаётся значением по умолчанию:
+    /// программа, навязывающая язык вопреки настройкам системы, раздражает сильнее,
+    /// чем радует угаданным выбором.
+    /// </remarks>
+    public string? Language { get; init; }
+
     /// <summary>Когда проверяли в последний раз. Чаще раза в сутки незачем.</summary>
     public DateTime? LastUpdateCheckUtc { get; init; }
 

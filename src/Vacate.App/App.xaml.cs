@@ -10,6 +10,9 @@ public partial class App : Application
         // тоже должен объясняться человеку, а не закрывать окно молча.
         CrashHandler.Install(this);
 
+        // Язык выбирается до создания окон: разметка берёт тексты при построении.
+        Localization.Strings.Use(Vacate.Platform.Windows.Files.AppSettings.Load().Language);
+
         base.OnStartup(e);
     }
 }

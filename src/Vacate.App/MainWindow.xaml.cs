@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using Vacate.App.Localization;
 using Vacate.App.Views;
 using Vacate.Platform.Windows.Files;
 
@@ -22,7 +23,10 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         var version = Assembly.GetExecutingAssembly().GetName().Version;
-        VersionLabel.Text = version is null ? string.Empty : $"версия {version.Major}.{version.Minor}.{version.Build}";
+
+        VersionLabel.Text = version is null
+            ? string.Empty
+            : $"{Strings.Get("Common.Version")} {version.Major}.{version.Minor}.{version.Build}";
 
         Navigate("dashboard", animate: false);
 
@@ -131,8 +135,10 @@ public partial class MainWindow : Window
         _updateUrl = result.DownloadUrl;
         _updateVersion = result.LatestVersion;
 
-        UpdateText.Text = $"Вышла версия {result.LatestVersion}. Установка не начнётся сама: "
-                          + "пока у программы нет подписи кода, запускать обновление без вашего ведома нельзя.";
+        UpdateText.Text = string.Format(
+            System.Globalization.CultureInfo.CurrentCulture,
+            Strings.Get("Update.Available"),
+            result.LatestVersion);
 
         UpdateBanner.Visibility = Visibility.Visible;
     }
@@ -182,10 +188,8 @@ public partial class MainWindow : Window
         UpdateBanner.Visibility = Visibility.Collapsed;
 
         MessageBox.Show(
-            "Программа больше не будет обращаться в сеть.\n\n"
-            + "Проверить наличие новой версии можно вручную на странице проекта:\n"
-            + "github.com/Egor062020/Vacate/releases",
-            "Обновления отключены",
+            Strings.Get("Settings.UpdatesOffBody"),
+            Strings.Get("Settings.UpdatesOffTitle"),
             MessageBoxButton.OK,
             MessageBoxImage.Information);
     }

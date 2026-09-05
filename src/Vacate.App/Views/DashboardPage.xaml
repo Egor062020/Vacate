@@ -1,33 +1,34 @@
 <UserControl x:Class="Vacate.App.Views.DashboardPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:Vacate.App.Localization">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel>
-            <TextBlock Style="{StaticResource PageTitle}" Text="Обзор" />
+            <TextBlock Style="{StaticResource PageTitle}" Text="{loc:Loc Nav.Dashboard}" />
             <TextBlock Style="{StaticResource PageSubtitle}"
-                       Text="Состояние компьютера и что можно сделать прямо сейчас." />
+                       Text="{loc:Loc Dashboard.Subtitle2}" />
 
             <!-- Метрики: крупные числа, как в референсе оформления -->
             <UniformGrid Rows="1" Columns="3" Margin="0,0,0,8">
                 <Border Style="{StaticResource Card}" Margin="0,0,10,0">
                     <StackPanel>
                         <TextBlock x:Name="FreeSpaceValue" Style="{StaticResource MetricValue}" Text="—" />
-                        <TextBlock Style="{StaticResource MetricLabel}" Text="СВОБОДНО НА СИСТЕМНОМ ДИСКЕ" />
+                        <TextBlock Style="{StaticResource MetricLabel}" Text="{loc:Loc Dashboard.FreeSpace}" />
                     </StackPanel>
                 </Border>
 
                 <Border Style="{StaticResource Card}" Margin="5,0">
                     <StackPanel>
                         <TextBlock x:Name="JunkValue" Style="{StaticResource MetricValue}" Text="—" />
-                        <TextBlock Style="{StaticResource MetricLabel}" Text="МОЖНО ОСВОБОДИТЬ" />
+                        <TextBlock Style="{StaticResource MetricLabel}" Text="{loc:Loc Dashboard.CanFree}" />
                     </StackPanel>
                 </Border>
 
                 <Border Style="{StaticResource Card}" Margin="10,0,0,0">
                     <StackPanel>
                         <TextBlock x:Name="StartupValue" Style="{StaticResource MetricValue}" Text="—" />
-                        <TextBlock Style="{StaticResource MetricLabel}" Text="ПРОГРАММ В АВТОЗАПУСКЕ" />
+                        <TextBlock Style="{StaticResource MetricLabel}" Text="{loc:Loc Dashboard.StartupCount}" />
                     </StackPanel>
                 </Border>
             </UniformGrid>
@@ -46,24 +47,24 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <TextBlock Style="{StaticResource SectionTitle}" Text="С чего начать" />
+            <TextBlock Style="{StaticResource SectionTitle}" Text="{loc:Loc Dashboard.WhereToStart}" />
 
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Style="{StaticResource BodyText}"
-                               Text="Быстрая очистка убирает только то, что создаётся заново: временные файлы и кэши. Реестр и программы она не трогает." />
+                               Text="{loc:Loc Dashboard.QuickNote}" />
                     <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
-                        <Button x:Name="ScanButton" Style="{StaticResource PrimaryButton}" Content="Посмотреть, что найдётся" Click="OnScan" />
+                        <Button x:Name="ScanButton" Style="{StaticResource PrimaryButton}" Content="{loc:Loc Dashboard.Scan}" Click="OnScan" />
                         <TextBlock x:Name="ScanHint" Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="14,0,0,0" />
                     </StackPanel>
                 </StackPanel>
             </Border>
 
-            <TextBlock Style="{StaticResource SectionTitle}" Text="Последняя очистка" />
+            <TextBlock Style="{StaticResource SectionTitle}" Text="{loc:Loc Dashboard.LastCleanup}" />
 
             <Border Style="{StaticResource Card}">
                 <StackPanel x:Name="LastSessionPanel">
-                    <TextBlock x:Name="LastSessionText" Style="{StaticResource SecondaryText}" Text="Очисток пока не было." />
+                    <TextBlock x:Name="LastSessionText" Style="{StaticResource SecondaryText}" Text="{loc:Loc Dashboard.NoCleanups}" />
                 </StackPanel>
             </Border>
         </StackPanel>

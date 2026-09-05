@@ -1,7 +1,8 @@
 <Window x:Class="Vacate.App.Views.UninstallWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Удаление программы"
+        xmlns:loc="clr-namespace:Vacate.App.Localization"
+        Title="{loc:Loc Uninstall.WindowTitle}"
         Height="720" Width="780"
         MinHeight="520" MinWidth="640"
         WindowStartupLocation="CenterOwner"
@@ -40,7 +41,7 @@
                 <Border x:Name="WarningCard" Style="{StaticResource Card}" Margin="0,14,0,0"
                         BorderBrush="{StaticResource WarningBrush}" Visibility="Collapsed">
                     <StackPanel>
-                        <TextBlock Text="Стоит знать до нажатия" Style="{StaticResource SectionTitle}"
+                        <TextBlock Text="{loc:Loc Uninstall.WarningTitle}" Style="{StaticResource SectionTitle}"
                                    Margin="0,0,0,8" Foreground="{StaticResource WarningBrush}" />
                         <TextBlock x:Name="WarningText" Style="{StaticResource BodyText}" />
                     </StackPanel>
@@ -48,13 +49,13 @@
 
                 <Border Style="{StaticResource Card}" Margin="0,14,0,0">
                     <StackPanel>
-                        <TextBlock Text="Как это будет" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <TextBlock Text="{loc:Loc Uninstall.HowTitle}" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
                         <TextBlock Style="{StaticResource BodyText}" Margin="0,0,0,6"
-                                   Text="1. Запустится деинсталлятор самой программы. Он чужой: что он спросит и что удалит, решает он, а не Vacate." />
+                                   Text="{loc:Loc Uninstall.How1}" />
                         <TextBlock Style="{StaticResource BodyText}" Margin="0,0,0,6"
-                                   Text="2. Затем Vacate поищет то, что деинсталлятор оставил после себя." />
+                                   Text="{loc:Loc Uninstall.How2}" />
                         <TextBlock Style="{StaticResource BodyText}"
-                                   Text="3. Найденное покажет списком — удалять или нет, решите вы. Ничего не исчезнет без вашей отметки." />
+                                   Text="{loc:Loc Uninstall.How3}" />
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -136,9 +137,9 @@
         </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-            <Button x:Name="CancelButton" Style="{StaticResource SecondaryButton}" Content="Отмена"
+            <Button x:Name="CancelButton" Style="{StaticResource SecondaryButton}" Content="{loc:Loc Common.Cancel}"
                     Margin="0,0,10,0" Click="OnCancel" />
-            <Button x:Name="ActionButton" Style="{StaticResource PrimaryButton}" Content="Удалить программу"
+            <Button x:Name="ActionButton" Style="{StaticResource PrimaryButton}" Content="{loc:Loc Uninstall.Start}"
                     Click="OnAction" />
         </StackPanel>
     </Grid>

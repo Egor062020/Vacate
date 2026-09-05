@@ -38,20 +38,21 @@ public sealed class ScheduleManager
 
             if (task is null)
             {
-                return new ScheduleState(false, null, null);
+                return new ScheduleState(false, null, null, null);
             }
 
             var trigger = task.Definition.Triggers.FirstOrDefault();
 
             return new ScheduleState(
                 task.Enabled,
+                FrequencyOf(trigger),
                 DescribeTrigger(trigger),
                 task.NextRunTime == DateTime.MinValue ? null : task.NextRunTime);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
         {
             // Планировщик может быть недоступен: служба отключена или нет прав.
-            return new ScheduleState(false, null, null);
+            return new ScheduleState(false, null, null, null);
         }
     }
 
@@ -189,6 +190,23 @@ public sealed class ScheduleManager
         }
     }
 
+    /// <summary>
+    /// Какая частота настроена, значением, а не текстом.
+    /// </summary>
+    /// <remarks>
+    /// Отдельно от описания намеренно. Интерфейс раньше определял частоту, ища
+    /// слово «месяц» в человеческом описании — то есть разбирал текст, написанный
+    /// для чтения глазами. При переводе интерфейса такая проверка перестала бы работать
+    /// молча: расписание показывалось бы еженедельным независимо от настроенного.
+    /// </remarks>
+    private static ScheduleFrequency? FrequencyOf(Trigger? trigger) => trigger switch
+    {
+        DailyTrigger => ScheduleFrequency.Daily,
+        WeeklyTrigger => ScheduleFrequency.Weekly,
+        MonthlyTrigger => ScheduleFrequency.Monthly,
+        _ => null,
+    };
+
     private static string DescribeTrigger(Trigger? trigger) => trigger switch
     {
         DailyTrigger => "каждый день",
@@ -201,9 +219,14 @@ public sealed class ScheduleManager
 }
 
 /// <param name="Enabled">Задача существует и включена.</param>
-/// <param name="Frequency">Как часто запускается.</param>
+/// <param name="Frequency">Как часто запускается. Значение, а не текст: по нему принимают решения.</param>
+/// <param name="Description">То же самое человеческим языком — только для показа.</param>
 /// <param name="NextRun">Когда сработает в следующий раз.</param>
-public sealed record ScheduleState(bool Enabled, string? Frequency, DateTime? NextRun);
+public sealed record ScheduleState(
+    bool Enabled,
+    ScheduleFrequency? Frequency,
+    string? Description,
+    DateTime? NextRun);
 
 /// <param name="Success">Удалось ли изменить расписание.</param>
 /// <param name="Message">Пояснение человеческим языком.</param>

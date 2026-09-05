@@ -122,18 +122,17 @@ internal static class CrashHandler
         try
         {
             var message = new StringBuilder()
-                .AppendLine("Произошла ошибка, которую программа не смогла обработать.")
-                .AppendLine()
-                .AppendLine($"Что случилось: {exception.Message}")
-                .AppendLine();
+                .AppendLine(string.Format(
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    Localization.Strings.Get("Crash.Body"),
+                    exception.Message));
 
             if (reportPath is not null)
             {
-                message
-                    .AppendLine("Подробности сохранены в файл:")
-                    .AppendLine(reportPath)
-                    .AppendLine()
-                    .AppendLine("Его можно приложить к сообщению об ошибке — личные данные из него убраны.");
+                message.AppendLine(string.Format(
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    Localization.Strings.Get("Crash.Saved"),
+                    reportPath));
             }
 
             MessageBox.Show(message.ToString(), "Vacate", MessageBoxButton.OK, MessageBoxImage.Error);
