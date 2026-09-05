@@ -30,7 +30,19 @@ public partial class MainWindow : Window
 
         Loaded += async (_, _) =>
         {
-            SetTrayIcon(AppSettings.Load().ShowTrayIcon);
+            var settings = AppSettings.Load();
+
+            SetTrayIcon(settings.ShowTrayIcon);
+
+            // Знакомство идёт до всего остального: оно объясняет, что программа
+            // делает с чужими файлами, и это надо знать до первого нажатия.
+            if (!settings.TourShown)
+            {
+                new FirstRunTour { Owner = this }.ShowDialog();
+
+                (AppSettings.Load() with { TourShown = true }).Save();
+            }
+
             await CheckForUpdatesAsync();
         };
 

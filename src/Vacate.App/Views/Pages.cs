@@ -305,6 +305,19 @@ public sealed class DiskPage : ListPage
             LoadAsync,
             extraButtonText: "Удалить выбранное",
             extraAction: DeleteSelectedAsync);
+
+        // Список говорит, что самое большое; карта — как это соотносится
+        // между собой. Второй вопрос человек задаёт себе первым.
+        AddSecondaryAction("Показать картой", OpenMap);
+    }
+
+    private void OpenMap()
+    {
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        var map = new DiskMapWindow(root) { Owner = Window.GetWindow(this) };
+
+        map.ShowDialog();
     }
 
     /// <summary>

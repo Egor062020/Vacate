@@ -22,6 +22,22 @@
                     Click="OnPreview" Margin="10,0,0,0" IsEnabled="False" />
             <Button x:Name="CleanButton" Style="{StaticResource SecondaryButton}" Content="Очистить"
                     Click="OnClean" Margin="10,0,0,0" IsEnabled="False" />
+            <!--
+                Полоса хода работы. Появляется только во время сканирования: постоянно
+                висящая полоса перестаёт что-либо значить, а во время работы человек
+                должен видеть, что программа занята, а не зависла.
+            -->
+            <Border x:Name="ScanIndicator" Width="120" Height="3" Margin="16,0,0,0"
+                    VerticalAlignment="Center" CornerRadius="2" Visibility="Collapsed"
+                    Background="{StaticResource BorderBrush}" ClipToBounds="True">
+                <Border x:Name="ScanPulse" Width="40" HorizontalAlignment="Left" CornerRadius="2"
+                        Background="{StaticResource AccentBrush}">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="ScanPulseShift" />
+                    </Border.RenderTransform>
+                </Border>
+            </Border>
+
             <TextBlock x:Name="StatusText" Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="16,0,0,0" />
         </StackPanel>
 

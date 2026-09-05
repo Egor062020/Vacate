@@ -1,0 +1,66 @@
+<Window x:Class="Vacate.App.Views.FirstRunTour"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="С чего начать"
+        Height="560" Width="640"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource SurfaceBrush}"
+        ResizeMode="NoResize">
+
+    <!--
+        Показывается один раз, при первом запуске. Не мастер настройки и не реклама
+        возможностей: четыре страницы о том, что программа делает с чужими файлами
+        и как вернуть сделанное. Это то, чего человек не узнает, нажимая наугад,
+        а узнать должен до первого нажатия.
+    -->
+    <Grid Margin="30">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock x:Name="StepNumber" Style="{StaticResource SecondaryText}"
+                       FontFamily="{StaticResource MonoFont}" Margin="0,0,0,6" />
+            <TextBlock x:Name="StepTitle" Style="{StaticResource PageTitle}" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Margin="0,18,0,0">
+            <TextBlock x:Name="StepBody" Style="{StaticResource BodyText}" FontSize="14" LineHeight="23" />
+
+            <Border x:Name="StepAside" Style="{StaticResource Card}" Margin="0,20,0,0"
+                    BorderBrush="{StaticResource AccentDimBrush}">
+                <TextBlock x:Name="StepAsideText" Style="{StaticResource BodyText}" />
+            </Border>
+        </StackPanel>
+
+        <Grid Grid.Row="2" Margin="0,20,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Точки шагов: человек должен видеть, сколько ещё осталось. -->
+            <ItemsControl Grid.Column="0" x:Name="Dots" VerticalAlignment="Center">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Ellipse Width="7" Height="7" Margin="0,0,7,0" Fill="{Binding}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button x:Name="SkipButton" Style="{StaticResource SecondaryButton}" Content="Пропустить"
+                        Margin="0,0,10,0" Click="OnSkip" />
+                <Button x:Name="NextButton" Style="{StaticResource PrimaryButton}" Content="Дальше"
+                        Click="OnNext" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

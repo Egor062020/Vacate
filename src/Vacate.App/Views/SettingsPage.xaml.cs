@@ -205,6 +205,13 @@ public partial class SettingsPage : UserControl
         }
     }
 
+    private void OnShowTour(object sender, RoutedEventArgs e)
+    {
+        // Знакомство показывается один раз, но вернуться к нему человек вправе:
+        // половину прочитанного при первом запуске он к этому моменту забыл.
+        new FirstRunTour { Owner = Window.GetWindow(this) }.ShowDialog();
+    }
+
     private static void OpenFolder(string path)
     {
         try

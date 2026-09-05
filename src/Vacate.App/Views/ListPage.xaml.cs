@@ -1,6 +1,8 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 
 namespace Vacate.App.Views;
 
@@ -144,6 +146,8 @@ public partial class ListPage : UserControl
         RefreshButton.IsEnabled = false;
         StatusText.Text = "Читаю…";
 
+        SetScanIndicator(true);
+
         try
         {
             var (rows, status) = await _loader(CancellationToken.None);
@@ -159,6 +163,36 @@ public partial class ListPage : UserControl
         finally
         {
             RefreshButton.IsEnabled = true;
+            SetScanIndicator(false);
         }
+    }
+
+    /// <summary>
+    /// Показать, что работа идёт.
+    /// </summary>
+    /// <remarks>
+    /// Обход диска и чтение списка программ занимают заметное время, и всё это время
+    /// неподвижный экран читается как «зависло». Системная настройка уменьшения
+    /// анимации уважается: для того, кто её включил, движение — не мелкое неудобство.
+    /// </remarks>
+    private void SetScanIndicator(bool busy)
+    {
+        ScanIndicator.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!busy || !SystemParameters.ClientAreaAnimation)
+        {
+            ScanPulseShift.BeginAnimation(TranslateTransform.XProperty, null);
+            return;
+        }
+
+        ScanPulseShift.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
+        {
+            From = 0,
+            To = ScanIndicator.Width - ScanPulse.Width,
+            Duration = TimeSpan.FromMilliseconds(900),
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+        });
     }
 }

@@ -26,6 +26,19 @@
                     Visibility="Collapsed" Click="OnExtra" />
             <Button x:Name="SecondExtraButton" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0"
                     Visibility="Collapsed" Click="OnSecondExtra" />
+            <!-- Полоса хода работы: чтение списка программ или обход диска занимает
+                 время, и неподвижный экран всё это время читается как «зависло». -->
+            <Border x:Name="ScanIndicator" Width="120" Height="3" Margin="16,0,0,0"
+                    VerticalAlignment="Center" CornerRadius="2" Visibility="Collapsed"
+                    Background="{StaticResource BorderBrush}" ClipToBounds="True">
+                <Border x:Name="ScanPulse" Width="40" HorizontalAlignment="Left" CornerRadius="2"
+                        Background="{StaticResource AccentBrush}">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="ScanPulseShift" />
+                    </Border.RenderTransform>
+                </Border>
+            </Border>
+
             <TextBlock x:Name="StatusText" Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="16,0,0,0" />
         </StackPanel>
 

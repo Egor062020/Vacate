@@ -3,6 +3,8 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using Vacate.Abstractions.Execution;
 using Vacate.Abstractions.Model;
 using Vacate.Abstractions.Safety;
@@ -399,10 +401,44 @@ public partial class CleanPage : UserControl
         PreviewButton.IsEnabled = !busy && _plan is { TotalCount: > 0 };
         CleanButton.IsEnabled = !busy && _plan is { TotalCount: > 0 };
 
+        SetScanIndicator(busy);
+
         if (!string.IsNullOrEmpty(status))
         {
             StatusText.Text = status;
         }
+    }
+
+    /// <summary>
+    /// Показать, что работа идёт.
+    /// </summary>
+    /// <remarks>
+    /// Сканирование занимает от секунд до минуты, и всё это время неподвижный экран
+    /// читается как «зависло». Движение здесь — не украшение: оно единственное отличает
+    /// работающую программу от повисшей.
+    ///
+    /// Системная настройка уменьшения анимации уважается: для того, кто её включил,
+    /// движение на экране — не мелкое неудобство.
+    /// </remarks>
+    private void SetScanIndicator(bool busy)
+    {
+        ScanIndicator.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!busy || !SystemParameters.ClientAreaAnimation)
+        {
+            ScanPulseShift.BeginAnimation(TranslateTransform.XProperty, null);
+            return;
+        }
+
+        ScanPulseShift.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
+        {
+            From = 0,
+            To = ScanIndicator.Width - ScanPulse.Width,
+            Duration = TimeSpan.FromMilliseconds(900),
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+        });
     }
 
     private static TempFilesScanner BuildScanner() => new(BuildPolicy());
